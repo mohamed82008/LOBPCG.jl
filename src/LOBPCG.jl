@@ -61,7 +61,7 @@ function normalize!(x, c, A)
     x ./= norm(x, c, A)
 end
 
-function locg(A, B, x, ::Type{Val{sense}}=Val{:Min}; tol=eltype(x)(1)/10^6) where sense
+function locg(A, B, x, ::Type{Val{sense}}=Val{:Min}, tol=eltype(x)(1)/10^6) where sense
     T = eltype(x)
 
     c = zeros(T, length(x)) # Matrix-vector multiplication buffer
@@ -78,13 +78,13 @@ function locg(A, B, x, ::Type{Val{sense}}=Val{:Min}; tol=eltype(x)(1)/10^6) wher
     end
     normalize!(x, c, B)
     # Find Rayleight quotient
-    lambda = rq!(c, A, x)
+    lambda::T = rq!(c, A, x)
 
     # Find residual
     residual!(r, c, A, B, x, lambda)
     r_norm = norm(r, c, B)
     if r_norm < tol
-        return x, lambda
+        return lambda, x
     end
     r ./= r_norm
 
@@ -107,7 +107,7 @@ function locg(A, B, x, ::Type{Val{sense}}=Val{:Min}; tol=eltype(x)(1)/10^6) wher
         # Compute restricted problem eigenvalues and vectors
         restricted_matrix!(R_A, C, A, X)
         restricted_matrix!(R_B, C, B, X)
-        vals, vects = eig(R_A, R_B) # Should replace with inplace version or use StaticArrays
+        vals::typeof(x), vects::typeof(X) = eig(Symmetric(R_A), Symmetric(R_B)) # Should replace with inplace version or use StaticArrays
         if sense === :Min
             lambda, ind = findmin(vals) # New Rayleigh quotient
             x_r = vects[:,ind] # Make more efficient
@@ -124,10 +124,11 @@ function locg(A, B, x, ::Type{Val{sense}}=Val{:Min}; tol=eltype(x)(1)/10^6) wher
         residual!(r, c, A, B, x, lambda)
         r_norm = norm(r, c, B)
         if r_norm < tol
-            return lambda, x
+            break
         end
         r ./= r_norm
     end
+    return lambda, x
 end
 
 end # module
