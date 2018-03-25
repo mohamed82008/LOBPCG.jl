@@ -9,7 +9,7 @@
 ## Introduction
 
 This package implements the algorithm for finding minimum or maximum generalized eigenvalues and vectors from "Andrew V. Knyazev. Toward the Optimal Preconditioned Eigensolver: Locally Optimal Block Preconditioned Conjugate
-Gradient Method. SIAM Journal on Scientic Computing, 23(2):517541, 2001." The algorithm tries to maximize or minimize the Rayleigh quotient using an enhanced conjugate gradient method. This package is still in the proof of concept stage and only implements the single eigenvector version (i.e. no blocking).
+Gradient Method. SIAM Journal on Scientific Computing, 23(2):517-541, 2001." The algorithm tries to maximize or minimize the Rayleigh quotient using an enhanced conjugate gradient method. This package is still in the proof of concept stage and only implements the single eigenvector version (i.e. no blocking).
 
 ## Example
 
