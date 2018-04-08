@@ -1,3 +1,8 @@
+function locg(A, ::UniformScaling, x::Vector{T}, ::Type{Val{sense}}=Val{:Min}, tol=T(1)/10^6, P! = identity) where {T, sense}
+    buffers = LOCGBuffersSimple{Vector{T}, Matrix{T}}(x, Matrix{T}(length(x), 3))
+    locg(A, buffers, Val{sense}, tol, P!)
+end
+
 function locg(A, B, x::Vector{T}, ::Type{Val{sense}}=Val{:Min}, tol=T(1)/10^6, P! = identity) where {T, sense}
     buffers = LOCGBuffersGeneral{Vector{T}, Matrix{T}}(x, Matrix{T}(length(x), 3))
     locg(A, B, buffers, Val{sense}, tol, P!)
