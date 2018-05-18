@@ -1,19 +1,19 @@
-function locg(A, ::UniformScaling, x::Vector{T}, ::Type{Val{sense}}=Val{:Min}, tol=T(1)/10^6, P! = identity) where {T, sense}
+function locg(A, ::UniformScaling, x::Vector{T}, ::Type{Val{sense}}=Val{:Min}, tol=T(1)/10^6, P! = identity, maxiter = 500) where {T, sense}
     buffers = LOCGBuffersSimple{Vector{T}, Matrix{T}}(x, Matrix{T}(length(x), 3))
-    locg(A, buffers, Val{sense}, tol, P!)
+    locg(A, buffers, Val{sense}, tol, P!, maxiter)
 end
 
-function locg(A, B, x::Vector{T}, ::Type{Val{sense}}=Val{:Min}, tol=T(1)/10^6, P! = identity) where {T, sense}
+function locg(A, B, x::Vector{T}, ::Type{Val{sense}}=Val{:Min}, tol=T(1)/10^6, P! = identity, maxiter = 500) where {T, sense}
     buffers = LOCGBuffersGeneral{Vector{T}, Matrix{T}}(x, Matrix{T}(length(x), 3))
-    locg(A, B, buffers, Val{sense}, tol, P!)
+    locg(A, B, buffers, Val{sense}, tol, P!, maxiter)
 end
 
-function locg(A, x::Vector{T}, ::Type{Val{sense}}=Val{:Min}, tol=eltype(x)(1)/10^6, P! = identity) where {T, sense}
+function locg(A, x::Vector{T}, ::Type{Val{sense}}=Val{:Min}, tol=eltype(x)(1)/10^6, P! = identity, maxiter = 500) where {T, sense}
     buffers = LOCGBuffersSimple{Vector{T}, Matrix{T}}(x, Matrix{T}(length(x), 3))
-    locg(A, buffers, Val{sense}, tol, P!)
+    locg(A, buffers, Val{sense}, tol, P!, maxiter)
 end
 
-function locg(A, buffers::LOCGBuffersSimple{Tx,TQ}, ::Type{Val{sense}}=Val{:Min}, tol=eltype(buffers.x)(1)/10^6, P! = identity) where {Tx, TQ, sense}
+function locg(A, buffers::LOCGBuffersSimple{Tx,TQ}, ::Type{Val{sense}}=Val{:Min}, tol=eltype(buffers.x)(1)/10^6, P! = identity, maxiter = 500) where {Tx, TQ, sense}
     T = eltype(buffers.x)
 
     x, Ax, x_prev, Ax_prev, r, Ar, c, X, Q = buffers.x, buffers.Ax, buffers.x_prev, buffers.Ax_prev, buffers.r, buffers.Ar, buffers.c, buffers.X, buffers.Q
@@ -37,7 +37,9 @@ function locg(A, buffers::LOCGBuffersSimple{Tx,TQ}, ::Type{Val{sense}}=Val{:Min}
     # Find residual norm
     r_norm = sqrt(dot(r, r))
 
-    while r_norm > tol
+    iter = 0
+    while r_norm > tol && iter < maxiter
+        iter += 1
         # Precondition new search direction
         if !(P! isa typeof(identity))
             P!(r)
@@ -116,7 +118,7 @@ function locg(A, buffers::LOCGBuffersSimple{Tx,TQ}, ::Type{Val{sense}}=Val{:Min}
     return lambda::T, x::Tx
 end
 
-function locg(A, B, buffers::LOCGBuffersGeneral{Tx,TQ}, ::Type{Val{sense}}=Val{:Min}, tol=eltype(x)(1)/10^6, P! = identity) where {Tx, TQ, sense}
+function locg(A, B, buffers::LOCGBuffersGeneral{Tx,TQ}, ::Type{Val{sense}}=Val{:Min}, tol=eltype(x)(1)/10^6, P! = identity, maxiter = 500) where {Tx, TQ, sense}
     T = eltype(buffers.x)
 
     x, Ax, Bx, x_prev, Ax_prev, Bx_prev, r, Ar, Br, c, X, Q = buffers.x, buffers.Ax, buffers.Bx, buffers.x_prev, buffers.Ax_prev, buffers.Bx_prev, buffers.r, buffers.Ar, buffers.Br, buffers.c, buffers.X, buffers.Q
@@ -144,7 +146,9 @@ function locg(A, B, buffers::LOCGBuffersGeneral{Tx,TQ}, ::Type{Val{sense}}=Val{:
     # Find residual norm and check convergence
     r_norm = sqrt(dot(r, r))
 
-    while r_norm > tol
+    iter = 0
+    while r_norm > tol && iter < maxiter
+        iter += 1
         # Preconditioner new search direction
         if !(P! isa typeof(identity))
             P!(r)
