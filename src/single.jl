@@ -165,6 +165,9 @@ function locg(A, B, buffers::LOCGBuffersGeneral{Tx,TQ}, ::Type{Val{sense}}=Val{:
         if singular(R_B)
             # Overwrite search directions
             overwrite_qr!(X, Q, x_prev, x, r)
+            tmpX = X
+            X = Q
+            Q = tmpX
 
             R_A = restricted_matrix!(Q, A, X)
             R_B = restricted_matrix!(Q, B, X)
