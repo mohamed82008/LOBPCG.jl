@@ -1,6 +1,18 @@
+const DEBUG = false
+
+macro debug(xs...)
+    expr = Expr(:block)
+    for x in xs
+        push!(expr.args, :(@show $x))
+    end
+    push!(expr.args, :(println("-------------------------")))
+    push!(expr.args, :(readline(STDIN)))
+    esc(expr)
+end
+
 function pause()
     # Used only when verbosity level > 10.
-    input()
+    readline(STDIN)
 end
 
 """Changes blockVectorV in place."""
@@ -18,19 +30,35 @@ function _b_orthonormalize(B, blockVectorV, blockVectorBV=nothing; retInvR=false
             blockVectorBV = blockVectorV  # Shared data!!!
         end
     end
+    @static if DEBUG
+        println("Line = ", @__LINE__)
+        @debug blockVectorV, blockVectorBV
+    end
+
     gramVBV = At_mul_B(blockVectorV, blockVectorBV)
+    @static if DEBUG
+        println("Line = ", @__LINE__)
+        @debug blockVectorV, blockVectorBV
+    end
     #gramVBV = (gramVBV + gramVBV')/2
     gramVBV = chol(gramVBV)
     gramVBV = inv(gramVBV)
     # gramVBV is now R^{-1}.
-    blockVectorV = blockVectorV * gramVBV
     if !(B isa Void)
+        blockVectorV = blockVectorV * gramVBV
         blockVectorBV = blockVectorBV * gramVBV
+    else
+        blockVectorV = blockVectorV * gramVBV
+        blockVectorBV = blockVectorV
     end
 
     if retInvR
         return blockVectorV, blockVectorBV, gramVBV
     else
+        @static if DEBUG
+            println("Line = ", @__LINE__)
+            @debug blockVectorV, blockVectorBV
+        end
         return blockVectorV, blockVectorBV
     end
 end
@@ -173,6 +201,11 @@ function lobpcg(A, X,
         for i in 1:sizeX
             activeMask[i] = activeMask[i] && residualNorms[i] > residualTolerance[i]
         end
+        @static if DEBUG
+            println("Line = ", @__LINE__)
+            @debug activeMask
+        end
+
         if verbosityLevel > 2
             println(activeMask)
         end
@@ -199,9 +232,19 @@ function lobpcg(A, X,
         activeBlockVectorR = blockVectorR[:,activeMask]
 
         if iterationNumber > 1
+            @static if DEBUG
+                println("Line = ", @__LINE__)
+                @debug blockVectorP, blockVectorBP
+            end
+
             activeBlockVectorP = blockVectorP[:,activeMask]
             activeBlockVectorAP = blockVectorAP[:,activeMask]
             activeBlockVectorBP = blockVectorBP[:,activeMask]
+
+            @static if DEBUG
+                println("Line = ", @__LINE__)
+                @debug activeBlockVectorP, activeBlockVectorBP
+            end
         end
 
         if !(M isa Void)
@@ -212,6 +255,10 @@ function lobpcg(A, X,
         ##
         # Apply constraints to the preconditioned residuals.
         if !(blockVectorY isa Void)
+            @static if DEBUG
+                println("Line = ", @__LINE__)
+                @debug blockVectorY, blockVectorBY
+            end
             _applyConstraints(activeBlockVectorR,
                               gramYBY, blockVectorBY, blockVectorY)
         end
@@ -221,12 +268,21 @@ function lobpcg(A, X,
         aux = _b_orthonormalize(B, activeBlockVectorR)
         activeBlockVectorR, activeBlockVectorBR = aux
 
+        @static if DEBUG
+            println("Line = ", @__LINE__)
+            @debug activeBlockVectorR, activeBlockVectorBR
+        end
+
         activeBlockVectorAR = A * activeBlockVectorR
 
         if iterationNumber > 1
             aux = _b_orthonormalize(B, activeBlockVectorP,
                                     activeBlockVectorBP, retInvR=true)
             activeBlockVectorP, activeBlockVectorBP, invR = aux
+            @static if DEBUG
+                println("Line = ", @__LINE__)
+                @debug activeBlockVectorP, activeBlockVectorBP
+            end
             activeBlockVectorAP = activeBlockVectorAP * invR
         end
 
@@ -308,12 +364,22 @@ function lobpcg(A, X,
 
             bpp = activeBlockVectorBR * eigBlockVectorR
             bpp += activeBlockVectorBP * eigBlockVectorP
+
+            @static if DEBUG
+                println("Line = ", @__LINE__)
+                @debug pp, bpp
+            end
         else
             eigBlockVectorX = eigBlockVector[1:sizeX, :]
             eigBlockVectorR = eigBlockVector[sizeX+1:end, :]
             pp = activeBlockVectorR * eigBlockVectorR
             app = activeBlockVectorAR * eigBlockVectorR
             bpp = activeBlockVectorBR * eigBlockVectorR
+
+            @static if DEBUG
+                println("Line = ", @__LINE__)
+                @debug pp, bpp
+            end
         end
 
         if verbosityLevel > 10
@@ -323,11 +389,23 @@ function lobpcg(A, X,
             pause()
         end
 
+        @static if DEBUG
+            println("Line = ", @__LINE__)
+            @debug blockVectorX, blockVectorBX
+        end
         blockVectorX = blockVectorX * eigBlockVectorX + pp
         blockVectorAX = blockVectorAX * eigBlockVectorX + app
         blockVectorBX = blockVectorBX * eigBlockVectorX + bpp
 
+        @static if DEBUG
+            println("Line = ", @__LINE__)
+            @debug blockVectorX, blockVectorBX
+        end
         blockVectorP, blockVectorAP, blockVectorBP = pp, app, bpp
+        @static if DEBUG
+            println("Line = ", @__LINE__)
+            @debug blockVectorP, blockVectorBP
+        end
     end
     
     aux = blockVectorBX * diagm(_lambda)
