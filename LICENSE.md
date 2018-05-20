@@ -37,4 +37,7 @@ The LOBPCG.jl package is licensed under the MIT "Expat" License:
 >
 > SOFTWARE.
 >
->
+
+NOTE:
+
+The LOBPCG2.jl file is derived from a BSD licensed file. See the file for more details.
