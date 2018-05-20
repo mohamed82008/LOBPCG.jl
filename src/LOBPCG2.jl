@@ -40,7 +40,7 @@ function _b_orthonormalize(B, blockVectorV, blockVectorBV=nothing; retInvR=false
         println("Line = ", @__LINE__)
         @debug blockVectorV, blockVectorBV
     end
-    #gramVBV = (gramVBV + gramVBV')/2
+    gramVBV = (gramVBV + gramVBV')/2
     gramVBV = chol(gramVBV)
     gramVBV = inv(gramVBV)
     # gramVBV is now R^{-1}.
@@ -66,7 +66,7 @@ end
 """Locally Optimal Block Preconditioned Conjugate Gradient Method (LOBPCG)"""
 function lobpcg(A, X,
             B=nothing, M=nothing, Y=nothing,
-            tol=nothing, maxiter=100,
+            tol=nothing, maxiter=200,
             largest=true, verbosityLevel=0,
             retLambdaHistory=false, retResidualNormsHistory=false)
 
@@ -199,7 +199,7 @@ function lobpcg(A, X,
         push!(residualNormsHistory, residualNorms)
 
         for i in 1:sizeX
-            activeMask[i] = activeMask[i] && residualNorms[i] > residualTolerance[i]
+            activeMask[i] = activeMask[i] && residualNorms[i] > residualTolerance
         end
         @static if DEBUG
             println("Line = ", @__LINE__)
@@ -314,6 +314,9 @@ function lobpcg(A, X,
             gramB = [ident0 xbw
                     xbw' ident]
         end
+
+        gramA = (gramA + gramA')/2
+        gramB = (gramB + gramB')/2
 
         @assert ishermitian(gramA)
         @assert ishermitian(gramB)
