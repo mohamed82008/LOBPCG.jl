@@ -28,7 +28,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 =#
 
-struct Blocks{Generalized, T, TA<:AbatractArray{T}}
+struct Blocks{Generalized, T, TA<:AbstractArray{T}}
     block::TA # X, R or P
     A_block::TA # AX, AR or AP
     B_block::TA # BX, BR or BP
@@ -81,7 +81,7 @@ struct Constraint{T, TA<:AbstractArray{T}, TC}
     tmp::TA # to be used in view
 end
 function Constraint(::Void, B, X)
-    return Constraint{Void, Matrix{Void}, Void}(Matrix{Void}(), Matrix{Void}(), nothing, nothing, nothing)
+    return Constraint{Void, Matrix{Void}, Void}(Matrix{Void}(0,0), Matrix{Void}(0,0), nothing, Matrix{Void}(0,0), Matrix{Void}(0,0))
 end
 function Constraint(Y, B, X)
     T = eltype(X)
@@ -98,6 +98,11 @@ function Constraint(Y, B, X)
 
     return Constraint(Y, BY, gramYBY_chol, gramYBV, tmp)
 end
+
+function (constr!::Constraint{Void})(X)
+    nothing
+end
+
 function (constr!::Constraint)(X)
     sizeX = size(X, 2)
     sizeY = size(constr!.Y, 2)
@@ -112,16 +117,189 @@ end
 Base.size(::Constraint{Void}) = 0
 Base.size(c::Constraint) = size(c.Y, 2)
 
-struct RPreconditioner{T, TA<:AbstractArray{T}, TM}
+struct RPreconditioner{TM, T, TA<:AbstractArray{T}}
     M::TM
     buffer::TA
-    RPreconditioner(M, X) = RPreconditioner(M, similar(X))
+    RPreconditioner{TM, T, TA}(M, X) where {TM, T, TA<:AbstractArray{T}} = new(M, similar(X))
+end
+RPreconditioner(M, X) = RPreconditioner{typeof(M), eltype(X), typeof(X)}(M, X)
+
+function (precond!::RPreconditioner{Void})(X)
+    nothing
 end
 function (precond!::RPreconditioner)(X)
     A_mul_B!(precond!.buffer, precond!.M, X)
     # Just returning buffer would be cheaper but struct at call site must be mutable
     X .= precond!.buffer
     nothing
+end
+
+struct BlockGram{Generalized, TA}
+    XAX::TA
+    XAP::TA
+    XAR::TA
+    PAP::TA
+    PAR::TA
+    RAR::TA
+end
+function BlockGram(XBlocks::Blocks{Generalized, T}) where {Generalized, T}
+    sizeX = size(XBlocks.block, 2)
+    XAX = zeros(T, sizeX, sizeX)
+    XAP = zeros(T, sizeX, sizeX)
+    XAR = zeros(T, sizeX, sizeX)
+    PAP = zeros(T, sizeX, sizeX)
+    PAR = zeros(T, sizeX, sizeX)
+    RAR = zeros(T, sizeX, sizeX)
+    return BlockGram{Generalized, Matrix{T}}(XAX, XAP, XAR, PAP, PAR, RAR) 
+end
+XAX!(BlockGram, XBlocks) = At_mul_B!(BlockGram.XAX, XBlocks.block, XBlocks.A_block)
+XAP!(BlockGram, XBlocks, PBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.XAP, :, 1:n), XBlocks.block, view(PBlocks.A_block, :, 1:n))
+XAR!(BlockGram, XBlocks, RBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.XAR, :, 1:n), XBlocks.block, view(RBlocks.A_block, :, 1:n))
+PAP!(BlockGram, PBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.PAP, 1:n, 1:n), view(PBlocks.block, :, 1:n), view(PBlocks.A_block, :, 1:n))
+PAR!(BlockGram, PBlocks, RBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.PAR, 1:n, 1:n), view(PBlocks.block, :, 1:n), view(RBlocks.A_block, :, 1:n))
+RAR!(BlockGram, RBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.RAR, 1:n, 1:n), view(RBlocks.block, :, 1:n), view(RBlocks.A_block, :, 1:n))
+XBP!(BlockGram, XBlocks, PBlocks) = At_mul_B!(BlockGram.XBP, XBlocks.block, PBlocks.B_block)
+XBR!(BlockGram, XBlocks, RBlocks, n) = At_mul_B!(view(BlockGram.XAR, :, 1:n), XBlocks.block, view(RBlocks.B_block, :, 1:n))
+PBR!(BlockGram, PBlocks, RBlocks, n) = At_mul_B!(view(BlockGram.PAR, 1:n, 1:n), view(PBlocks.block, :, 1:n), view(RBlocks.B_block, :, 1:n))
+#=
+XBX!(BlockGram, XBlocks) = At_mul_B!(BlockGram.XBX, XBlocks.block, XBlocks.B_block)
+PBP!(BlockGram, PBlocks) = At_mul_B!(BlockGram.PBP, PBlocks.block, PBlocks.B_block)
+RBR!(BlockGram, RBlocks) = At_mul_B!(BlockGram.RBR, RBlocks.block, RBlocks.B_block)
+=#
+function (g::BlockGram)(gram, lambda, n1::Int, n2::Int, n3::Int, normalized=false)
+    if n1 > 0
+        gram[1:n1, 1:n1] .= Diagonal(view(lambda, 1:n1))
+    end
+    if n2 > 0
+        if normalized
+            for j in n1+1:n2, i in n1+1:n2
+                gram[i, j] = ifelse(i==j, 1, 0)
+            end
+        else
+            gram[n1+1:n1+n2, n1+1:n1+n2] .= view(g.RAR, 1:n2, 1:n2)
+        end
+        gram[1:n1, n1+1:n1+n2] .= view(g.XAR, 1:n1, 1:n2)
+        transpose!(view(gram, n1+1:n1+n2, 1:n1), view(g.XAR, 1:n1, 1:n2))
+    end
+    if n3 > 0
+        if normalized
+            for j in n1+n2+1:n1+n2+n3, i in n1+n2+1:n1+n2+n3
+                gram[i, j] = ifelse(i==j, 1, 0)
+            end
+        else
+            gram[n1+n2+1:n1+n2+n3, n1+n2+1:n1+n2+n3] .= view(g.PAP, 1:n3, 1:n3)
+        end
+        gram[n1+1:n1+n2, n1+n2+1:n1+n2+n3] .= view(g.PAR, 1:n3, 1:n3)
+        gram[1:n1, n1+n2+1:n1+n2+n3] .= view(g.XAP, 1:n1, 1:n3)
+        transpose!(view(gram, n1+n2+1:n1+n2+n3, n1+1:n1+n2), view(g.PAR, 1:n3, 1:n3))
+        transpose!(view(gram, n1+n2+1:n1+n2+n3, 1:n1), view(g.XAP, 1:n1, 1:n3))
+    end
+    return 
+end
+function (g::BlockGram)(gram, n1::Int, n2::Int, n3::Int)
+    if n1 > 0
+        gram[1:n1, 1:n1] .= view(g.XAX, 1:n1, 1:n1)
+    end
+    if n2 > 0
+        gram[n1+1:n2, n1+1:n2] .= view(g.RAR, 1:n2, 1:n2)
+        gram[1:n1, n1+1:n2] .= view(g.XAR, 1:n1, 1:n2)
+        transpose!(view(gram, n1+1:n2, 1:n1), view(g.XAR, 1:n1, 1:n2))
+    end
+    if n3 > 0
+        gram[n1+n2+1:n1+n2+n3, n1+n2+1:n1+n2+n3] .= view(g.PAP, 1:n3, 1:n3)
+        gram[n1+1:n1+n2, n1+n2+1:n1+n2+n3] .= view(g.PAR, 1:n3, 1:n2)
+        gram[1:n1, n1+n2+1:n1+n2+n3] .= view(g.XAP, 1:n1, 1:n3)
+        transpose!(view(gram, n1+n2+1:n1+n2+n3, n1+1:n1+n2), view(g.PAR, 1:n3, 1:n2))
+        transpose!(view(gram, n1+n2+1:n1+n2+n3, 1:n1), view(g.XAP, 1:n1, 1:n3))
+    end
+    return 
+end
+
+abstract type AbstractOrtho end
+struct CholQR{TA} <: AbstractOrtho
+    gramVBV::TA # to be used in view
+end
+function (ortho!::CholQR)(XBlocks::Blocks{Generalized}; update_AX=false, update_BX=false) where Generalized
+    X = XBlocks.block
+    BX = XBlocks.B_block # Assumes it is premultiplied
+    sizeX = size(X, 2)
+    gram_view = view(ortho!.gramVBV, 1:sizeX, 1:sizeX)
+    At_mul_B!(gram_view, X, BX)
+    cholf = cholfact!(Hermitian(gram_view))
+    R = cholf.factors
+    X[:,1] .= view(X, :, 1) ./ R[1,1]
+    for i in 2:sizeX
+        for j in 1:i-1
+            X[:,i] .= view(X, :, i) - view(X, :, j) .* R[j,i]
+        end
+        X[:,i] .= view(X, :, i) ./ R[i,i]
+    end
+
+    if update_AX
+        X = XBlocks.A_block
+        X[:,1] .= view(X, :, 1) ./ R[1,1]
+        for i in 2:sizeX
+            for j in 1:i-1
+                X[:,i] .= view(X, :, i) - view(X, :, j) .* R[j,i]
+            end
+            X[:,i] .= view(X, :, i) ./ R[i,i]
+        end    
+    end
+
+    if Generalized
+        if update_BX
+            X = XBlocks.B_block
+            X[:,1] .= view(X, :, 1) ./ R[1,1]
+            for i in 2:sizeX
+                for j in 1:i-1
+                    X[:,i] .= view(X, :, i) - view(X, :, j) .* R[j,i]
+                end
+                X[:,i] .= view(X, :, i) ./ R[i,i]
+            end    
+        end
+    end
+    return 
+end
+function (ortho!::CholQR)(XBlocks::Blocks{Generalized}, sizeX; update_AX=false, update_BX=false) where Generalized
+    X = XBlocks.block
+    BX = XBlocks.B_block # Assumes it is premultiplied
+    gram_view = view(ortho!.gramVBV, 1:sizeX, 1:sizeX)
+    At_mul_B!(gram_view, view(X, :, 1:sizeX), view(BX, :, 1:sizeX))
+    cholf = cholfact!(Hermitian(gram_view))
+    R = cholf.factors
+    X[:,1] .= view(X, :, 1) ./ R[1,1]
+    for i in 2:sizeX
+        for j in 1:i-1
+            X[:,i] .= view(X, :, i) - view(X, :, j) .* R[j,i]
+        end
+        X[:,i] .= view(X, :, i) ./ R[i,i]
+    end    
+
+    if update_AX
+        X = XBlocks.A_block
+        X[:,1] .= view(X, :, 1) ./ R[1,1]
+        for i in 2:sizeX
+            for j in 1:i-1
+                X[:,i] .= view(X, :, i) - view(X, :, j) .* R[j,i]
+            end
+            X[:,i] .= view(X, :, i) ./ R[i,i]
+        end    
+    end
+
+    if Generalized
+        if update_BX
+            X = XBlocks.B_block
+            X[:,1] .= view(X, :, 1) ./ R[1,1]
+            for i in 2:sizeX
+                for j in 1:i-1
+                    X[:,i] .= view(X, :, i) - view(X, :, j) .* R[j,i]
+                end
+                X[:,i] .= view(X, :, i) ./ R[i,i]
+            end    
+        end
+    end
+
+    return 
 end
 
 struct RayleighRitz{Generalized, T, TA, TB, TL<:AbstractVector{T}, TVec<:AbstractVector{Int}, TV<:AbstractArray{T}, TBlocks<:Blocks{Generalized, T}, TO<:AbstractOrtho, TP, TC, TG, TH, TM}
@@ -138,8 +316,8 @@ struct RayleighRitz{Generalized, T, TA, TB, TL<:AbstractVector{T}, TVec<:Abstrac
     activePBlocks::TBlocks # to be used in view
     RBlocks::TBlocks
     activeRBlocks::TBlocks # to be used in view
-    iteration::RefValue{Int}
-    currentBlockSize::RefValue{Int}
+    iteration::Base.RefValue{Int}
+    currentBlockSize::Base.RefValue{Int}
     ortho!::TO
     precond!::TP
     constr!::TC
@@ -189,175 +367,7 @@ function RayleighRitz(A, B, M, Y, X, largest)
     gramA = zeros(T, 3*nev, 3*nev)
     gramB = zeros(T, 3*nev, 3*nev)
 
-    return RayleighRitz{generalized, T, typeof(A), typeof(B), typeof(λ), typeof(λperm), typeof(V), typeof(XBlocks), typeof(ortho!), typeof(precond!), typeof(gramABlock), typeof(residualNormsHistory), typeof(activeMask)}(A, B, λ, λperm, V, residuals, largest, XBlocks, tempXBlocks, PBlocks, activePBlocks, RBlocks, activeRBlocks, iteration, currentBlockSize, ortho!, precond!, constr!, gramABlock, gramBBlock, gramA, gramB, residualNormsHistory, activeMask)
-end
-
-struct BlockGram{Generalized, TA}
-    XAX::TA
-    XAP::TA
-    XAR::TA
-    PAP::TA
-    PAR::TA
-    RAR::TA
-end
-function BlockGram(XBlocks{Generalized, T}) where {Generalized, T}
-    sizeX = size(XBlocks.block, 2)
-    XAX = zeros(T, sizeX, sizeX)
-    XAP = zeros(T, sizeX, sizeX)
-    XAR = zeros(T, sizeX, sizeX)
-    PAP = zeros(T, sizeX, sizeX)
-    PAR = zeros(T, sizeX, sizeX)
-    RAR = zeros(T, sizeX, sizeX)
-    return BlockGram{Generalized, Matrix{T}}(XAX, XAP, XAR, PAP, PAR, RAR) 
-end
-XAX!(BlockGram, XBlocks) = At_mul_B!(BlockGram.XAX, XBlocks.block, XBlocks.A_block)
-XAP!(BlockGram, XBlocks, PBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.XAP, :, 1:n), XBlocks.block, view(PBlocks.A_block, :, 1:n))
-XAR!(BlockGram, XBlocks, RBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.XAR, :, 1:n), XBlocks.block, view(RBlocks.A_block, :, 1:n))
-PAP!(BlockGram, PBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.PAP, 1:n, 1:n), view(PBlocks.block, :, 1:n), view(PBlocks.A_block, :, 1:n))
-PAR!(BlockGram, PBlocks, RBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.PAR, 1:n, 1:n), view(PBlocks.block, :, 1:n), view(RBlocks.A_block, :, 1:n))
-RAR!(BlockGram, RBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.RAR, 1:n, 1:n), view(RBlocks.block, :, 1:n), view(RBlocks.A_block, :, 1:n))
-XBP!(BlockGram, XBlocks, PBlocks) = At_mul_B!(BlockGram.XBP, XBlocks.block, PBlocks.B_block)
-XBR!(BlockGram, XBlocks, RBlocks, n) = At_mul_B!(view(BlockGram.XBR, :, 1:n), XBlocks.block, view(RBlocks.B_block, :, 1:n))
-PBR!(BlockGram, PBlocks, RBlocks, n) = At_mul_B!(view(BlockGram.PBR, 1:n, 1:n), view(PBlocks.block, :, 1:n), view(RBlocks.B_block, :, 1:n))
-#=
-XBX!(BlockGram, XBlocks) = At_mul_B!(BlockGram.XBX, XBlocks.block, XBlocks.B_block)
-PBP!(BlockGram, PBlocks) = At_mul_B!(BlockGram.PBP, PBlocks.block, PBlocks.B_block)
-RBR!(BlockGram, RBlocks) = At_mul_B!(BlockGram.RBR, RBlocks.block, RBlocks.B_block)
-=#
-function (g::BlockGram)(gram, lambda, n1::Int, n2::Int, n3::Int, normalized=false)
-    if n1 > 0
-        gram[1:n1, 1:n1] .= Diagonal(view(lambda, 1:n1))
-    end
-    if n2 > 0
-        if normalized
-            for j in n1+1:n2, i in n1+1:n2
-                gram[i, j] = ifelse(i==j, 1, 0)
-            end
-        else
-            gram[n1+1:n2, n1+1:n2] .= g.RAR
-        end
-        gram[1:n1, n1+1:n2] .= g.XAR
-        transpose!(view(gram, n1+1:n2, 1:n1), g.XAR)
-    end
-    if n3 > 0
-        if normalized
-            for j in n1+n2+1:n1+n2+n3, i in n1+n2+1:n1+n2+n3
-                gram[i, j] = ifelse(i==j, 1, 0)
-            end
-        else
-            gram[n1+n2+1:n1+n2+n3, n1+n2+1:n1+n2+n3] .= g.PAP
-        end
-        gram[n1+1:n1+n2, n1+n2+1:n1+n2+n3] .= g.PAR
-        gram[1:n1, n1+n2+1:n1+n2+n3] .= g.XAP
-        transpose!(view(gram, n1+n2+1:n1+n2+n3, n1+1:n1+n2), g.PAR)
-        transpose!(view(gram, n1+n2+1:n1+n2+n3, 1:n1), g.XAP)
-    end
-    return 
-end
-function (g::BlockGram)(gram, n1::Int, n2::Int, n3::Int)
-    if n1 > 0
-        gram[1:n1, 1:n1] .= g.XAX
-    end
-    if n2 > 0
-        gram[n1+1:n2, n1+1:n2] .= g.RAR
-        gram[1:n1, n1+1:n2] .= g.XAR
-        transpose!(view(gram, n1+1:n2, 1:n1), g.XAR)
-    end
-    if n3 > 0
-        gram[n1+n2+1:n1+n2+n3, n1+n2+1:n1+n2+n3] .= g.PAP
-        gram[n1+1:n1+n2, n1+n2+1:n1+n2+n3] .= g.PAR
-        gram[1:n1, n1+n2+1:n1+n2+n3] .= g.XAP
-        transpose!(view(gram, n1+n2+1:n1+n2+n3, n1+1:n1+n2), g.PAR)
-        transpose!(view(gram, n1+n2+1:n1+n2+n3, 1:n1), g.XAP)
-    end
-    return 
-end
-
-abstract type AbstractOrtho end
-struct CholQR{TA} <: AbstractOrtho
-    gramVBV::TA # to be used in view
-end
-function (ortho!::CholQR)(XBlocks{Generalized}; update_AX=false, update_BX=false) where Generalized
-    X = XBlocks.block
-    BX = XBlocks.B_block # Assumes it is premultiplied
-    sizeX = size(X, 2)
-    gram_view = view(ortho!.gramVBV, 1:sizeX, 1:sizeX)
-    At_mul_B!(gram_view, X, BX)
-    cholf = cholfact!(gram_view)
-    R = cholf.factors
-    X[:,1] .= view(X, :, 1) ./ R[1,1]
-    for i in 2:sizeX
-        for j in 1:i-1
-            X[:,i] .= view(X, :, i) - view(X, :, j) .* R[j,i]
-        end
-        X[:,i] .= view(X, :, i) ./ R[i,i]
-    end
-
-    if update_AX
-        X = XBlocks.A_block
-        X[:,1] .= view(X, :, 1) ./ R[1,1]
-        for i in 2:sizeX
-            for j in 1:i-1
-                X[:,i] .= view(X, :, i) - view(X, :, j) .* R[j,i]
-            end
-            X[:,i] .= view(X, :, i) ./ R[i,i]
-        end    
-    end
-
-    if Generalized
-        if update_BX
-            X = XBlocks.B_block
-            X[:,1] .= view(X, :, 1) ./ R[1,1]
-            for i in 2:sizeX
-                for j in 1:i-1
-                    X[:,i] .= view(X, :, i) - view(X, :, j) .* R[j,i]
-                end
-                X[:,i] .= view(X, :, i) ./ R[i,i]
-            end    
-        end
-    end
-    return 
-end
-function (ortho!::CholQR)(XBlocks{Generalized}, sizeX; update_AX=false, update_BX=false) where Generalized
-    X = XBlocks.block
-    BX = XBlocks.B_block # Assumes it is premultiplied
-    gram_view = view(ortho!.gramVBV, 1:sizeX, 1:sizeX)
-    At_mul_B!(gram_view, view(X, :, 1:sizeX), view(BX, :, 1:sizeX))
-    cholf = cholfact!(gram_view)
-    R = cholf.factors
-    X[:,1] .= view(X, :, 1) ./ R[1,1]
-    for i in 2:sizeX
-        for j in 1:i-1
-            X[:,i] .= view(X, :, i) - view(X, :, j) .* R[j,i]
-        end
-        X[:,i] .= view(X, :, i) ./ R[i,i]
-    end    
-
-    if update_AX
-        X = XBlocks.A_block
-        X[:,1] .= view(X, :, 1) ./ R[1,1]
-        for i in 2:sizeX
-            for j in 1:i-1
-                X[:,i] .= view(X, :, i) - view(X, :, j) .* R[j,i]
-            end
-            X[:,i] .= view(X, :, i) ./ R[i,i]
-        end    
-    end
-
-    if Generalized
-        if update_BX
-            X = XBlocks.B_block
-            X[:,1] .= view(X, :, 1) ./ R[1,1]
-            for i in 2:sizeX
-                for j in 1:i-1
-                    X[:,i] .= view(X, :, i) - view(X, :, j) .* R[j,i]
-                end
-                X[:,i] .= view(X, :, i) ./ R[i,i]
-            end    
-        end
-    end
-
-    return 
+    return RayleighRitz{generalized, T, typeof(A), typeof(B), typeof(λ), typeof(λperm), typeof(V), typeof(XBlocks), typeof(ortho!), typeof(precond!), typeof(constr!), typeof(gramABlock), typeof(residualNormsHistory), typeof(activeMask)}(A, B, λ, λperm, V, residuals, largest, XBlocks, tempXBlocks, PBlocks, activePBlocks, RBlocks, activeRBlocks, iteration, currentBlockSize, ortho!, precond!, constr!, gramABlock, gramBBlock, gramA, gramB, residualNormsHistory, activeMask)
 end
 
 function (rr::RayleighRitz{Generalized})(residualTolerance) where Generalized
@@ -382,15 +392,15 @@ function (rr::RayleighRitz{Generalized})(residualTolerance) where Generalized
         # Selects extremal eigenvalues and corresponding vectors
         selectperm!(rr.λperm, eigf.values, 1:sizeX, rev=rr.largest)
         rr.λ[1:sizeX] .= view(eigf.values, rr.λperm)
-        rr.V[:,1:sizeX] .= view(eigf.vectors, :, rr.λperm)
+        rr.V[1:sizeX,1:sizeX] .= view(eigf.vectors, :, rr.λperm)
         
         # Updates Ritz vectors X and updates AX and BX accordingly
-        A_mul_B!(rr.tempXBlocks.block, rr.XBlocks.block, view(rr.V, :, 1:sizeX))
+        A_mul_B!(rr.tempXBlocks.block, rr.XBlocks.block, view(rr.V, 1:sizeX, 1:sizeX))
         rr.XBlocks.block .= rr.tempXBlocks.block        
-        A_mul_B!(rr.tempXBlocks.A_block, rr.XBlocks.A_block, view(rr.V, :, 1:sizeX))
+        A_mul_B!(rr.tempXBlocks.A_block, rr.XBlocks.A_block, view(rr.V, 1:sizeX, 1:sizeX))
         rr.XBlocks.A_block .= rr.tempXBlocks.A_block
         if Generalized
-            A_mul_B!(rr.tempXBlocks.B_block, rr.XBlocks.B_block, view(rr.V, :, 1:sizeX))
+            A_mul_B!(rr.tempXBlocks.B_block, rr.XBlocks.B_block, view(rr.V, 1:sizeX, 1:sizeX))
             rr.XBlocks.B_block .= rr.tempXBlocks.B_block
         end
     elseif rr.iteration[] == 2
@@ -419,10 +429,10 @@ function (rr::RayleighRitz{Generalized})(residualTolerance) where Generalized
         rr.activeRBlocks.block[:, 1:rr.currentBlockSize[]] .= view(rr.RBlocks.block, :, rr.activeMask)
 
         # Precondition the active residual vectors
-        rr.precond!(view(rr.activeBlockVectorR, 1:rr.currentBlockSize[]))
+        rr.precond!(view(rr.activeRBlocks.block, 1:rr.currentBlockSize[]))
         
         # Constrain the active residual vectors to be B-orthogonal to Y
-        rr.constr!(view(rr.activeBlockVectorR, 1:rr.currentBlockSize[]))
+        rr.constr!(view(rr.activeRBlocks.block, 1:rr.currentBlockSize[]))
 
         # Find BR for the active residuals
         B_mul_X!(rr.activeRBlocks, rr.B, rr.currentBlockSize[])
@@ -448,12 +458,17 @@ function (rr::RayleighRitz{Generalized})(residualTolerance) where Generalized
         rr.gramBBlock(rr.gramB, rr.residuals, sizeX, rr.currentBlockSize[], 0, true)
 
         # Solve the Rayleigh-Ritz sub-problem
-        eigf = eigfact!(Hermitian(rr.gramA), Hermitian(rr.gramB))
+        subdim = sizeX+rr.currentBlockSize[]
+        gramAview = view(rr.gramA, 1:subdim, 1:subdim)
+        gramBview = view(rr.gramB, 1:subdim, 1:subdim)
+        @show gramAview
+        @show gramBview
+        eigf = eigfact!(Hermitian(gramAview), Hermitian(gramBview))
         
         # Selects extremal eigenvalues and corresponding vectors
         selectperm!(rr.λperm, eigf.values, 1:sizeX, rev=rr.largest)
         rr.λ[1:sizeX] .= view(eigf.values, rr.λperm)
-        rr.V[:,1:sizeX] .= view(eigf.vectors, :, rr.λperm)
+        rr.V[1:sizeX+rr.currentBlockSize[],1:sizeX] .= view(eigf.vectors, :, rr.λperm)
         
         # Updates Ritz vectors X and updates AX and BX accordingly
         # And updates P, AP and BP
@@ -509,10 +524,10 @@ function (rr::RayleighRitz{Generalized})(residualTolerance) where Generalized
         rr.activePBlocks.B_block[:, 1:rr.currentBlockSize[]] .= view(rr.PBlocks.B_block, :, rr.activeMask)
 
         # Precondition the active residual vectors
-        rr.precond!(view(rr.activeBlockVectorR, 1:rr.currentBlockSize[]))
+        rr.precond!(view(rr.activeRBlocks.block, 1:rr.currentBlockSize[]))
         
         # Constrain the active residual vectors to be B-orthogonal to Y
-        rr.constr!(view(rr.activeBlockVectorR, 1:rr.currentBlockSize[]))
+        rr.constr!(view(rr.activeRBlocks.block, 1:rr.currentBlockSize[]))
 
         # Find BR for the active residuals
         B_mul_X!(rr.activeRBlocks, rr.B, rr.currentBlockSize[])
@@ -546,12 +561,15 @@ function (rr::RayleighRitz{Generalized})(residualTolerance) where Generalized
         rr.gramBBlock(rr.gramB, rr.residuals, sizeX, rr.currentBlockSize[], rr.currentBlockSize[], true)
         
         # Solve the Rayleigh-Ritz sub-problem
-        eigf = eigfact!(Hermitian(rr.gramA), Hermitian(rr.gramB))
+        subdim = sizeX + 2*rr.currentBlockSize[]
+        gramAview = view(rr.gramA, 1:subdim, 1:subdim)
+        gramBview = view(rr.gramB, 1:subdim, 1:subdim)
+        eigf = eigfact!(Hermitian(gramAview), Hermitian(gramBview))
         
         # Selects extremal eigenvalues and corresponding vectors
         selectperm!(rr.λperm, eigf.values, 1:sizeX, rev=rr.largest)
         rr.λ[1:sizeX] .= view(eigf.values, rr.λperm)
-        rr.V[:,1:sizeX] .= view(eigf.vectors, :, rr.λperm)
+        rr.V[1:sizeX+2*rr.currentBlockSize[],1:sizeX] .= view(eigf.vectors, :, rr.λperm)
         
         # Updates Ritz vectors X and updates AX and BX accordingly
         # And updates P, AP and BP
@@ -592,11 +610,11 @@ function dense_solver(A, B, X, largest)
 end
 
 """Locally Optimal Block Preconditioned Conjugate Gradient Method (LOBPCG)"""
-function lobpcg(A, X::AbstractMatrix, largest::Bool=true, ::Type{Val{residualhistory}}; preconditioner=nothing, constraint=nothing, maxiter::Integer=200, tol::Number=nothing) where {residualhistory}
+function lobpcg(A, X::AbstractMatrix, largest::Bool=true, ::Type{Val{residualhistory}} = Val{false}; preconditioner=nothing, constraint=nothing, maxiter::Integer=200, tol::Number=nothing) where {residualhistory}
     lobpcg(A, nothing, X, largest, Val{residualhistory}; tol=tol, maxiter=maxiter, preconditioner=preconditioner, constraint=constraint)
 end
 
-function lobpcg(A, B, X, largest=true, ::Type{Val{residualhistory}};
+function lobpcg(A, B, X, largest=true, ::Type{Val{residualhistory}}=Val{false};
                 preconditioner=nothing, constraint=nothing, 
                 tol=nothing, maxiter=200) where {residualhistory} 
 
@@ -618,11 +636,13 @@ function lobpcg(A, B, X, largest=true, ::Type{Val{residualhistory}};
         throw("X column dimension exceeds the row dimension")
     end
 
-    sizeY = size(constr)
+    if all(x->x==0, X)
+        X .= rand.()
+    end
     rr = RayleighRitz(A, B, M, Y, X, largest)
     residualTolerance = (tol isa Void) ? sqrt(1e-15)*n : tol
-    maxIterations = min(n, maxIterations)
-    for iteration in 1:maxIterations
+    maxiter = min(n, maxiter)
+    for iteration in 1:maxiter
         rr.iteration[] = iteration
         rr(residualTolerance)
         rr.currentBlockSize[] == 0 && break
