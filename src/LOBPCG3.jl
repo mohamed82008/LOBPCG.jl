@@ -158,7 +158,7 @@ XAR!(BlockGram, XBlocks, RBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(Blo
 PAP!(BlockGram, PBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.PAP, 1:n, 1:n), view(PBlocks.block, :, 1:n), view(PBlocks.A_block, :, 1:n))
 PAR!(BlockGram, PBlocks, RBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.PAR, 1:n, 1:n), view(PBlocks.block, :, 1:n), view(RBlocks.A_block, :, 1:n))
 RAR!(BlockGram, RBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.RAR, 1:n, 1:n), view(RBlocks.block, :, 1:n), view(RBlocks.A_block, :, 1:n))
-XBP!(BlockGram, XBlocks, PBlocks) = At_mul_B!(BlockGram.XBP, XBlocks.block, PBlocks.B_block)
+XBP!(BlockGram, XBlocks, PBlocks, n) = At_mul_B!(view(BlockGram.XAP, :, 1:n), XBlocks.block, view(PBlocks.B_block, :, 1:n))
 XBR!(BlockGram, XBlocks, RBlocks, n) = At_mul_B!(view(BlockGram.XAR, :, 1:n), XBlocks.block, view(RBlocks.B_block, :, 1:n))
 PBR!(BlockGram, PBlocks, RBlocks, n) = At_mul_B!(view(BlockGram.PAR, 1:n, 1:n), view(PBlocks.block, :, 1:n), view(RBlocks.B_block, :, 1:n))
 #=
@@ -196,17 +196,35 @@ function (g::BlockGram)(gram, lambda, n1::Int, n2::Int, n3::Int, normalized=fals
     end
     return 
 end
-function (g::BlockGram)(gram, n1::Int, n2::Int, n3::Int)
+function (g::BlockGram)(gram, n1::Int, n2::Int, n3::Int, normalized=false)
     if n1 > 0
-        gram[1:n1, 1:n1] .= view(g.XAX, 1:n1, 1:n1)
+        if normalized
+            for j in 1:n1, i in 1:n1
+                gram[i, j] = ifelse(i==j, 1, 0)
+            end
+        else
+            gram[1:n1, 1:n1] .= view(g.XAX, 1:n1, 1:n1)
+        end
     end
     if n2 > 0
-        gram[n1+1:n2, n1+1:n2] .= view(g.RAR, 1:n2, 1:n2)
-        gram[1:n1, n1+1:n2] .= view(g.XAR, 1:n1, 1:n2)
-        transpose!(view(gram, n1+1:n2, 1:n1), view(g.XAR, 1:n1, 1:n2))
+        if normalized
+            for j in n1+1:n1+n2, i in n1+1:n1+n2
+                gram[i, j] = ifelse(i==j, 1, 0)
+            end
+        else
+            gram[n1+1:n2, n1+1:n1+n2] .= view(g.RAR, 1:n2, 1:n2)
+        end
+        gram[1:n1, n1+1:n1+n2] .= view(g.XAR, 1:n1, 1:n2)
+        transpose!(view(gram, n1+1:n1+n2, 1:n1), view(g.XAR, 1:n1, 1:n2))
     end
     if n3 > 0
-        gram[n1+n2+1:n1+n2+n3, n1+n2+1:n1+n2+n3] .= view(g.PAP, 1:n3, 1:n3)
+        if normalized
+            for j in n1+n2+1:n1+n2+n3, i in n1+n2+1:n1+n2+n3
+                gram[i, j] = ifelse(i==j, 1, 0)
+            end
+        else
+            gram[n1+n2+1:n1+n2+n3, n1+n2+1:n1+n2+n3] .= view(g.PAP, 1:n3, 1:n3)
+        end
         gram[n1+1:n1+n2, n1+n2+1:n1+n2+n3] .= view(g.PAR, 1:n3, 1:n2)
         gram[1:n1, n1+n2+1:n1+n2+n3] .= view(g.XAP, 1:n1, 1:n3)
         transpose!(view(gram, n1+n2+1:n1+n2+n3, n1+1:n1+n2), view(g.PAR, 1:n3, 1:n2))
@@ -455,16 +473,14 @@ function (rr::RayleighRitz{Generalized})(residualTolerance) where Generalized
         XBR!(rr.gramBBlock, rr.XBlocks, rr.activeRBlocks, rr.currentBlockSize[])
         
         # Update the gram matrix [X R]' B [X R]
-        rr.gramBBlock(rr.gramB, rr.residuals, sizeX, rr.currentBlockSize[], 0, true)
+        rr.gramBBlock(rr.gramB, sizeX, rr.currentBlockSize[], 0, true)
 
         # Solve the Rayleigh-Ritz sub-problem
         subdim = sizeX+rr.currentBlockSize[]
         gramAview = view(rr.gramA, 1:subdim, 1:subdim)
         gramBview = view(rr.gramB, 1:subdim, 1:subdim)
-        @show gramAview
-        @show gramBview
         eigf = eigfact!(Hermitian(gramAview), Hermitian(gramBview))
-        
+
         # Selects extremal eigenvalues and corresponding vectors
         selectperm!(rr.λperm, eigf.values, 1:sizeX, rev=rr.largest)
         rr.λ[1:sizeX] .= view(eigf.values, rr.λperm)
@@ -558,7 +574,7 @@ function (rr::RayleighRitz{Generalized})(residualTolerance) where Generalized
         PBR!(rr.gramBBlock, rr.activePBlocks, rr.activeRBlocks, rr.currentBlockSize[])
         
         # Update the gram matrix [X R P]' B [X R P]
-        rr.gramBBlock(rr.gramB, rr.residuals, sizeX, rr.currentBlockSize[], rr.currentBlockSize[], true)
+        rr.gramBBlock(rr.gramB, sizeX, rr.currentBlockSize[], rr.currentBlockSize[], true)
         
         # Solve the Rayleigh-Ritz sub-problem
         subdim = sizeX + 2*rr.currentBlockSize[]
@@ -648,9 +664,10 @@ function lobpcg(A, B, X, largest=true, ::Type{Val{residualhistory}}=Val{false};
         rr.currentBlockSize[] == 0 && break
     end
 
+    resize!(rr.λ, sizeX)
     if residualhistory
-        return rr.λ, rr.XBlock.block, rr.residualNormsHistory
+        return rr.λ, rr.XBlocks.block, rr.residualNormsHistory
     else
-        return rr.λ, rr.XBlock.block
+        return rr.λ, rr.XBlocks.block
     end
 end
