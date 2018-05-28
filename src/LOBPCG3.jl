@@ -136,99 +136,93 @@ end
 
 struct BlockGram{Generalized, TA}
     XAX::TA
-    XAP::TA
     XAR::TA
-    PAP::TA
-    PAR::TA
+    XAP::TA
     RAR::TA
+    RAP::TA
+    PAP::TA
 end
 function BlockGram(XBlocks::Blocks{Generalized, T}) where {Generalized, T}
     sizeX = size(XBlocks.block, 2)
     XAX = zeros(T, sizeX, sizeX)
     XAP = zeros(T, sizeX, sizeX)
     XAR = zeros(T, sizeX, sizeX)
-    PAP = zeros(T, sizeX, sizeX)
-    PAR = zeros(T, sizeX, sizeX)
     RAR = zeros(T, sizeX, sizeX)
-    return BlockGram{Generalized, Matrix{T}}(XAX, XAP, XAR, PAP, PAR, RAR) 
+    RAP = zeros(T, sizeX, sizeX)
+    PAP = zeros(T, sizeX, sizeX)
+    return BlockGram{Generalized, Matrix{T}}(XAX, XAR, XAP, RAR, RAP, PAP)
 end
 XAX!(BlockGram, XBlocks) = At_mul_B!(BlockGram.XAX, XBlocks.block, XBlocks.A_block)
-XAP!(BlockGram, XBlocks, PBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.XAP, :, 1:n), XBlocks.block, view(PBlocks.A_block, :, 1:n))
-XAR!(BlockGram, XBlocks, RBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.XAR, :, 1:n), XBlocks.block, view(RBlocks.A_block, :, 1:n))
-PAP!(BlockGram, PBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.PAP, 1:n, 1:n), view(PBlocks.block, :, 1:n), view(PBlocks.A_block, :, 1:n))
-PAR!(BlockGram, PBlocks, RBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.PAR, 1:n, 1:n), view(PBlocks.block, :, 1:n), view(RBlocks.A_block, :, 1:n))
-RAR!(BlockGram, RBlocks, n=size(PBlocks.block, 2)) = At_mul_B!(view(BlockGram.RAR, 1:n, 1:n), view(RBlocks.block, :, 1:n), view(RBlocks.A_block, :, 1:n))
+XAP!(BlockGram, XBlocks, PBlocks, n) = At_mul_B!(view(BlockGram.XAP, :, 1:n), XBlocks.block, view(PBlocks.A_block, :, 1:n))
+XAR!(BlockGram, XBlocks, RBlocks, n) = At_mul_B!(view(BlockGram.XAR, :, 1:n), XBlocks.block, view(RBlocks.A_block, :, 1:n))
+RAR!(BlockGram, RBlocks, n) = At_mul_B!(view(BlockGram.RAR, 1:n, 1:n), view(RBlocks.block, :, 1:n), view(RBlocks.A_block, :, 1:n))
+RAP!(BlockGram, RBlocks, PBlocks, n) = At_mul_B!(view(BlockGram.RAP, 1:n, 1:n), view(RBlocks.A_block, :, 1:n), view(PBlocks.block, :, 1:n))
+PAP!(BlockGram, PBlocks, n) = At_mul_B!(view(BlockGram.PAP, 1:n, 1:n), view(PBlocks.block, :, 1:n), view(PBlocks.A_block, :, 1:n))
 XBP!(BlockGram, XBlocks, PBlocks, n) = At_mul_B!(view(BlockGram.XAP, :, 1:n), XBlocks.block, view(PBlocks.B_block, :, 1:n))
 XBR!(BlockGram, XBlocks, RBlocks, n) = At_mul_B!(view(BlockGram.XAR, :, 1:n), XBlocks.block, view(RBlocks.B_block, :, 1:n))
-PBR!(BlockGram, PBlocks, RBlocks, n) = At_mul_B!(view(BlockGram.PAR, 1:n, 1:n), view(PBlocks.block, :, 1:n), view(RBlocks.B_block, :, 1:n))
-#=
-XBX!(BlockGram, XBlocks) = At_mul_B!(BlockGram.XBX, XBlocks.block, XBlocks.B_block)
-PBP!(BlockGram, PBlocks) = At_mul_B!(BlockGram.PBP, PBlocks.block, PBlocks.B_block)
-RBR!(BlockGram, RBlocks) = At_mul_B!(BlockGram.RBR, RBlocks.block, RBlocks.B_block)
-=#
-function (g::BlockGram)(gram, lambda, n1::Int, n2::Int, n3::Int, normalized=false)
+RBP!(BlockGram, RBlocks, PBlocks, n) = At_mul_B!(view(BlockGram.RAP, 1:n, 1:n), view(RBlocks.B_block, :, 1:n), view(PBlocks.block, :, 1:n))
+XBX!(BlockGram, XBlocks) = At_mul_B!(BlockGram.XAX, XBlocks.block, XBlocks.B_block)
+RBR!(BlockGram, RBlocks, n) = At_mul_B!(view(BlockGram.RAR, 1:n, 1:n), view(RBlocks.block, :, 1:n), view(RBlocks.B_block, :, 1:n))
+PBP!(BlockGram, PBlocks, n) = At_mul_B!(view(BlockGram.PAP, 1:n, 1:n), view(PBlocks.block, :, 1:n), view(PBlocks.B_block, :, 1:n))
+
+function (g::BlockGram)(gram, lambda, n1::Int, n2::Int, n3::Int)
+    xr = 1:n1
+    rr = n1+1:n1+n2
+    pr = n1+n2+1:n1+n2+n3
     if n1 > 0
-        gram[1:n1, 1:n1] .= Diagonal(view(lambda, 1:n1))
+        #gram[xr, xr] .= view(g.XAX, 1:n1, 1:n1)
+        gram[xr, xr] .= Diagonal(view(lambda, 1:n1))
     end
     if n2 > 0
-        if normalized
-            for j in n1+1:n2, i in n1+1:n2
-                gram[i, j] = ifelse(i==j, 1, 0)
-            end
-        else
-            gram[n1+1:n1+n2, n1+1:n1+n2] .= view(g.RAR, 1:n2, 1:n2)
-        end
-        gram[1:n1, n1+1:n1+n2] .= view(g.XAR, 1:n1, 1:n2)
-        transpose!(view(gram, n1+1:n1+n2, 1:n1), view(g.XAR, 1:n1, 1:n2))
+        gram[rr, rr] .= view(g.RAR, 1:n2, 1:n2)
+        gram[xr, rr] .= view(g.XAR, 1:n1, 1:n2)
+        transpose!(view(gram, rr, xr), view(g.XAR, 1:n1, 1:n2))
     end
     if n3 > 0
-        if normalized
-            for j in n1+n2+1:n1+n2+n3, i in n1+n2+1:n1+n2+n3
-                gram[i, j] = ifelse(i==j, 1, 0)
-            end
-        else
-            gram[n1+n2+1:n1+n2+n3, n1+n2+1:n1+n2+n3] .= view(g.PAP, 1:n3, 1:n3)
-        end
-        gram[n1+1:n1+n2, n1+n2+1:n1+n2+n3] .= view(g.PAR, 1:n3, 1:n3)
-        gram[1:n1, n1+n2+1:n1+n2+n3] .= view(g.XAP, 1:n1, 1:n3)
-        transpose!(view(gram, n1+n2+1:n1+n2+n3, n1+1:n1+n2), view(g.PAR, 1:n3, 1:n3))
-        transpose!(view(gram, n1+n2+1:n1+n2+n3, 1:n1), view(g.XAP, 1:n1, 1:n3))
+        gram[pr, pr] .= view(g.PAP, 1:n3, 1:n3)
+        gram[rr, pr] .= view(g.RAP, 1:n2, 1:n3)
+        gram[xr, pr] .= view(g.XAP, 1:n1, 1:n3)
+        transpose!(view(gram, pr, rr), view(g.RAP, 1:n2, 1:n3))
+        transpose!(view(gram, pr, xr), view(g.XAP, 1:n1, 1:n3))
     end
     return 
 end
-function (g::BlockGram)(gram, n1::Int, n2::Int, n3::Int, normalized=false)
+function (g::BlockGram)(gram, n1::Int, n2::Int, n3::Int, normalized::Bool)
+    xr = 1:n1
+    rr = n1+1:n1+n2
+    pr = n1+n2+1:n1+n2+n3
     if n1 > 0
         if normalized
-            for j in 1:n1, i in 1:n1
+            for j in xr, i in xr
                 gram[i, j] = ifelse(i==j, 1, 0)
             end
         else
-            gram[1:n1, 1:n1] .= view(g.XAX, 1:n1, 1:n1)
+            gram[xr, xr] .= view(g.XAX, 1:n1, 1:n1)
         end
     end
     if n2 > 0
         if normalized
-            for j in n1+1:n1+n2, i in n1+1:n1+n2
+            for j in rr, i in rr
                 gram[i, j] = ifelse(i==j, 1, 0)
             end
         else
-            gram[n1+1:n2, n1+1:n1+n2] .= view(g.RAR, 1:n2, 1:n2)
+            gram[rr, rr] .= view(g.RAR, 1:n2, 1:n2)
         end
-        gram[1:n1, n1+1:n1+n2] .= view(g.XAR, 1:n1, 1:n2)
-        transpose!(view(gram, n1+1:n1+n2, 1:n1), view(g.XAR, 1:n1, 1:n2))
+        gram[xr, rr] .= view(g.XAR, 1:n1, 1:n2)
+        transpose!(view(gram, rr, xr), view(g.XAR, 1:n1, 1:n2))
     end
     if n3 > 0
         if normalized
-            for j in n1+n2+1:n1+n2+n3, i in n1+n2+1:n1+n2+n3
+            for j in pr, i in pr
                 gram[i, j] = ifelse(i==j, 1, 0)
             end
         else
-            gram[n1+n2+1:n1+n2+n3, n1+n2+1:n1+n2+n3] .= view(g.PAP, 1:n3, 1:n3)
+            gram[pr, pr] .= view(g.PAP, 1:n3, 1:n3)
         end
-        gram[n1+1:n1+n2, n1+n2+1:n1+n2+n3] .= view(g.PAR, 1:n3, 1:n2)
-        gram[1:n1, n1+n2+1:n1+n2+n3] .= view(g.XAP, 1:n1, 1:n3)
-        transpose!(view(gram, n1+n2+1:n1+n2+n3, n1+1:n1+n2), view(g.PAR, 1:n3, 1:n2))
-        transpose!(view(gram, n1+n2+1:n1+n2+n3, 1:n1), view(g.XAP, 1:n1, 1:n3))
+        gram[rr, pr] .= view(g.RAP, 1:n2, 1:n3)
+        gram[xr, pr] .= view(g.XAP, 1:n1, 1:n3)
+        transpose!(view(gram, pr, rr), view(g.RAP, 1:n2, 1:n3))
+        transpose!(view(gram, pr, xr), view(g.XAP, 1:n1, 1:n3))
     end
     return 
 end
@@ -368,7 +362,7 @@ function RayleighRitz(A, B, M, Y, X, largest)
         activePBlocks = Blocks(similar(X), similar(X), similar(X))
     end
     λ = zeros(T, nev*3)
-    λperm = zeros(Int, nev)
+    λperm = zeros(Int, nev*3)
     V = zeros(T, nev*3, nev*3)
     residuals = zeros(T, nev)
     iteration = Ref(1)
@@ -406,19 +400,20 @@ function (rr::RayleighRitz{Generalized})(residualTolerance) where Generalized
 
         # Solve the Rayleigh-Ritz sub-problem
         eigf = eigfact!(Hermitian(rr.gramABlock.XAX))
-        
+
         # Selects extremal eigenvalues and corresponding vectors
-        selectperm!(rr.λperm, eigf.values, 1:sizeX, rev=rr.largest)
-        rr.λ[1:sizeX] .= view(eigf.values, rr.λperm)
-        rr.V[1:sizeX,1:sizeX] .= view(eigf.vectors, :, rr.λperm)
-        
+        selectperm!(view(rr.λperm, 1:sizeX), eigf.values, 1:sizeX, rev=rr.largest)
+        rr.λ[1:sizeX] .= view(eigf.values, view(rr.λperm, 1:sizeX))
+        rr.V[1:sizeX, 1:sizeX] .= view(eigf.vectors, :, view(rr.λperm, 1:sizeX))
+
         # Updates Ritz vectors X and updates AX and BX accordingly
-        A_mul_B!(rr.tempXBlocks.block, rr.XBlocks.block, view(rr.V, 1:sizeX, 1:sizeX))
+        x_eigview = view(rr.V, 1:sizeX, 1:sizeX)
+        A_mul_B!(rr.tempXBlocks.block, rr.XBlocks.block, x_eigview)
         rr.XBlocks.block .= rr.tempXBlocks.block        
-        A_mul_B!(rr.tempXBlocks.A_block, rr.XBlocks.A_block, view(rr.V, 1:sizeX, 1:sizeX))
+        A_mul_B!(rr.tempXBlocks.A_block, rr.XBlocks.A_block, x_eigview)
         rr.XBlocks.A_block .= rr.tempXBlocks.A_block
         if Generalized
-            A_mul_B!(rr.tempXBlocks.B_block, rr.XBlocks.B_block, view(rr.V, 1:sizeX, 1:sizeX))
+            A_mul_B!(rr.tempXBlocks.B_block, rr.XBlocks.B_block, x_eigview)
             rr.XBlocks.B_block .= rr.tempXBlocks.B_block
         end
     elseif rr.iteration[] == 2
@@ -440,52 +435,51 @@ function (rr::RayleighRitz{Generalized})(residualTolerance) where Generalized
         # Update active vectors mask
         rr.activeMask .*= view(rr.residuals, 1:sizeX) .> residualTolerance
         rr.currentBlockSize[] = sum(rr.activeMask)
-        
         rr.currentBlockSize[] == 0 && return 
 
+        bs = rr.currentBlockSize[]
         # Update active R blocks
-        rr.activeRBlocks.block[:, 1:rr.currentBlockSize[]] .= view(rr.RBlocks.block, :, rr.activeMask)
+        rr.activeRBlocks.block[:, 1:bs] .= view(rr.RBlocks.block, :, rr.activeMask)
 
         # Precondition the active residual vectors
-        rr.precond!(view(rr.activeRBlocks.block, 1:rr.currentBlockSize[]))
+        rr.precond!(view(rr.activeRBlocks.block, 1:bs))
         
         # Constrain the active residual vectors to be B-orthogonal to Y
-        rr.constr!(view(rr.activeRBlocks.block, 1:rr.currentBlockSize[]))
+        rr.constr!(view(rr.activeRBlocks.block, 1:bs))
 
         # Find BR for the active residuals
-        B_mul_X!(rr.activeRBlocks, rr.B, rr.currentBlockSize[])
+        B_mul_X!(rr.activeRBlocks, rr.B, bs)
 
         # Orthonormalize the active residuals and updates BR
-        rr.ortho!(rr.activeRBlocks, rr.currentBlockSize[], update_BX=true)
+        rr.ortho!(rr.activeRBlocks, bs, update_BX=true)
 
         # Finds AR for the active residuals
-        A_mul_X!(rr.activeRBlocks, rr.A, rr.currentBlockSize[])
+        A_mul_X!(rr.activeRBlocks, rr.A, bs)
 
         # Find X'AX, R'AR and X'AR
         XAX!(rr.gramABlock, rr.XBlocks)
-        XAR!(rr.gramABlock, rr.XBlocks, rr.activeRBlocks, rr.currentBlockSize[])
-        RAR!(rr.gramABlock, rr.activeRBlocks, rr.currentBlockSize[])
+        XAR!(rr.gramABlock, rr.XBlocks, rr.activeRBlocks, bs)
+        RAR!(rr.gramABlock, rr.activeRBlocks, bs)
+        # Find X'BR
+        XBR!(rr.gramBBlock, rr.XBlocks, rr.activeRBlocks, bs)
 
         # Update the gram matrix [X R]' A [X R]
-        rr.gramABlock(rr.gramA, rr.λ, sizeX, rr.currentBlockSize[], 0, false)
-
-        # Find X'BR
-        XBR!(rr.gramBBlock, rr.XBlocks, rr.activeRBlocks, rr.currentBlockSize[])
+        rr.gramABlock(rr.gramA, view(rr.λ, 1:sizeX), sizeX, bs, 0)
         
         # Update the gram matrix [X R]' B [X R]
-        rr.gramBBlock(rr.gramB, sizeX, rr.currentBlockSize[], 0, true)
+        rr.gramBBlock(rr.gramB, sizeX, bs, 0, true)
 
         # Solve the Rayleigh-Ritz sub-problem
-        subdim = sizeX+rr.currentBlockSize[]
+        subdim = sizeX+bs
         gramAview = view(rr.gramA, 1:subdim, 1:subdim)
         gramBview = view(rr.gramB, 1:subdim, 1:subdim)
         eigf = eigfact!(Hermitian(gramAview), Hermitian(gramBview))
 
         # Selects extremal eigenvalues and corresponding vectors
-        selectperm!(rr.λperm, eigf.values, 1:sizeX, rev=rr.largest)
-        rr.λ[1:sizeX] .= view(eigf.values, rr.λperm)
-        rr.V[1:sizeX+rr.currentBlockSize[],1:sizeX] .= view(eigf.vectors, :, rr.λperm)
-        
+        selectperm!(view(rr.λperm, 1:subdim), eigf.values, 1:subdim, rev=rr.largest)
+        rr.λ[1:sizeX] .= view(eigf.values, view(rr.λperm, 1:sizeX))
+        rr.V[1:sizeX+bs, 1:sizeX] .= view(eigf.vectors, :, view(rr.λperm, 1:sizeX))
+
         # Updates Ritz vectors X and updates AX and BX accordingly
         # And updates P, AP and BP
         A_mul_B!(rr.tempXBlocks.block, rr.XBlocks.block, view(rr.V, 1:sizeX, 1:sizeX))
@@ -496,12 +490,12 @@ function (rr::RayleighRitz{Generalized})(residualTolerance) where Generalized
             A_mul_B!(rr.tempXBlocks.B_block, rr.XBlocks.B_block, view(rr.V, 1:sizeX, 1:sizeX))
         end
 
-        A_mul_B!(rr.PBlocks.block, view(rr.activeRBlocks.block, :, 1:rr.currentBlockSize[]), view(rr.V, sizeX+1:sizeX+rr.currentBlockSize[], 1:sizeX))
+        A_mul_B!(rr.PBlocks.block, view(rr.activeRBlocks.block, :, 1:bs), view(rr.V, sizeX+1:sizeX+bs, 1:sizeX))
 
-        A_mul_B!(rr.PBlocks.A_block, view(rr.activeRBlocks.A_block, :, 1:rr.currentBlockSize[]), view(rr.V, sizeX+1:sizeX+rr.currentBlockSize[], 1:sizeX))
+        A_mul_B!(rr.PBlocks.A_block, view(rr.activeRBlocks.A_block, :, 1:bs), view(rr.V, sizeX+1:sizeX+bs, 1:sizeX))
 
         if Generalized
-            A_mul_B!(rr.PBlocks.B_block, view(rr.activeRBlocks.B_block, :, 1:rr.currentBlockSize[]), view(rr.V, sizeX+1:sizeX+rr.currentBlockSize[], 1:sizeX))
+            A_mul_B!(rr.PBlocks.B_block, view(rr.activeRBlocks.B_block, :, 1:bs), view(rr.V, sizeX+1:sizeX+bs, 1:sizeX))
         end
 
         rr.XBlocks.block .= rr.tempXBlocks.block .+ rr.PBlocks.block
@@ -522,94 +516,111 @@ function (rr::RayleighRitz{Generalized})(residualTolerance) where Generalized
             end
             rr.residuals[j] = sqrt(rr.residuals[j])
         end
-
         # Store history of norms
         push!(rr.residualNormsHistory, rr.residuals[1:sizeX])
 
         # Update active vectors mask
-        rr.activeMask .*= view(rr.λ, 1:sizeX) .> residualTolerance
+        rr.activeMask .*= view(rr.residuals, 1:sizeX) .> residualTolerance
         rr.currentBlockSize[] = sum(rr.activeMask)
-
         rr.currentBlockSize[] == 0 && return
 
         # Update active blocks
-        rr.activeRBlocks.block[:, 1:rr.currentBlockSize[]] .= view(rr.RBlocks.block, :, rr.activeMask)
+        bs = rr.currentBlockSize[]
+
+        rr.activeRBlocks.block[:, 1:bs] .= view(rr.RBlocks.block, :, rr.activeMask)
         
-        rr.activePBlocks.block[:, 1:rr.currentBlockSize[]] .= view(rr.PBlocks.block, :, rr.activeMask)
-        rr.activePBlocks.A_block[:, 1:rr.currentBlockSize[]] .= view(rr.PBlocks.A_block, :, rr.activeMask)
-        rr.activePBlocks.B_block[:, 1:rr.currentBlockSize[]] .= view(rr.PBlocks.B_block, :, rr.activeMask)
+        rr.activePBlocks.block[:, 1:bs] .= view(rr.PBlocks.block, :, rr.activeMask)
+        rr.activePBlocks.A_block[:, 1:bs] .= view(rr.PBlocks.A_block, :, rr.activeMask)
+        rr.activePBlocks.B_block[:, 1:bs] .= view(rr.PBlocks.B_block, :, rr.activeMask)
 
         # Precondition the active residual vectors
-        rr.precond!(view(rr.activeRBlocks.block, 1:rr.currentBlockSize[]))
+        rr.precond!(view(rr.activeRBlocks.block, 1:bs))
         
         # Constrain the active residual vectors to be B-orthogonal to Y
-        rr.constr!(view(rr.activeRBlocks.block, 1:rr.currentBlockSize[]))
+        rr.constr!(view(rr.activeRBlocks.block, 1:bs))
 
         # Find BR for the active residuals
-        B_mul_X!(rr.activeRBlocks, rr.B, rr.currentBlockSize[])
+        B_mul_X!(rr.activeRBlocks, rr.B, bs)
 
         # Orthonormalize the active residuals, and update BR accordingly
-        rr.ortho!(rr.activeRBlocks, rr.currentBlockSize[], update_BX=true)
+        rr.ortho!(rr.activeRBlocks, bs, update_BX=true)
 
         # Updates AR for the active residuals
-        A_mul_X!(rr.activeRBlocks, rr.A, rr.currentBlockSize[])
+        A_mul_X!(rr.activeRBlocks, rr.A, bs)
 
         # Orthonormalizes P and updates AP
         # Probably not be necessary to update BX and AX here
-        rr.ortho!(rr.activePBlocks, rr.currentBlockSize[], update_AX=true, update_BX=true)
+        rr.ortho!(rr.activePBlocks, bs, update_AX=true, update_BX=true)
 
         # Find X'AX, R'AR, P'AP, X'AR, X'AP and R'AP
         XAX!(rr.gramABlock, rr.XBlocks)
-        XAR!(rr.gramABlock, rr.XBlocks, rr.activeRBlocks, rr.currentBlockSize[])
-        RAR!(rr.gramABlock, rr.activeRBlocks, rr.currentBlockSize[])
-        XAP!(rr.gramABlock, rr.XBlocks, rr.activePBlocks, rr.currentBlockSize[])
-        PAR!(rr.gramABlock, rr.activePBlocks, rr.activeRBlocks, rr.currentBlockSize[])
+        XAR!(rr.gramABlock, rr.XBlocks, rr.activeRBlocks, bs)
+        XAP!(rr.gramABlock, rr.XBlocks, rr.activePBlocks, bs)
+        RAR!(rr.gramABlock, rr.activeRBlocks, bs)
+        RAP!(rr.gramABlock, rr.activeRBlocks, rr.activePBlocks, bs)
+        PAP!(rr.gramABlock, rr.activePBlocks, bs)        
 
         # Update the gram matrix [X R P]' A [X R P]
-        rr.gramABlock(rr.gramA, rr.λ, sizeX, rr.currentBlockSize[], rr.currentBlockSize[], false)
+        rr.gramABlock(rr.gramA, view(rr.λ, 1:sizeX), sizeX, bs, bs)
+
+        # Can be removed
+        #XBX!(rr.gramBBlock, rr.XBlocks)
+        #RBR!(rr.gramBBlock, rr.activeRBlocks, bs)
+        #PBP!(rr.gramBBlock, rr.activePBlocks, bs)
 
         # Find X'BR, X'BP and P'BR
-        XBR!(rr.gramBBlock, rr.XBlocks, rr.activeRBlocks, rr.currentBlockSize[])
-        XBP!(rr.gramBBlock, rr.XBlocks, rr.activePBlocks, rr.currentBlockSize[])
-        PBR!(rr.gramBBlock, rr.activePBlocks, rr.activeRBlocks, rr.currentBlockSize[])
+        XBR!(rr.gramBBlock, rr.XBlocks, rr.activeRBlocks, bs)
+        XBP!(rr.gramBBlock, rr.XBlocks, rr.activePBlocks, bs)
+        RBP!(rr.gramBBlock, rr.activeRBlocks, rr.activePBlocks, bs)
         
         # Update the gram matrix [X R P]' B [X R P]
-        rr.gramBBlock(rr.gramB, sizeX, rr.currentBlockSize[], rr.currentBlockSize[], true)
+        rr.gramBBlock(rr.gramB, sizeX, bs, bs, true)
         
         # Solve the Rayleigh-Ritz sub-problem
-        subdim = sizeX + 2*rr.currentBlockSize[]
+        subdim = sizeX + 2*bs
         gramAview = view(rr.gramA, 1:subdim, 1:subdim)
         gramBview = view(rr.gramB, 1:subdim, 1:subdim)
         eigf = eigfact!(Hermitian(gramAview), Hermitian(gramBview))
-        
+
         # Selects extremal eigenvalues and corresponding vectors
-        selectperm!(rr.λperm, eigf.values, 1:sizeX, rev=rr.largest)
-        rr.λ[1:sizeX] .= view(eigf.values, rr.λperm)
-        rr.V[1:sizeX+2*rr.currentBlockSize[],1:sizeX] .= view(eigf.vectors, :, rr.λperm)
-        
+        selectperm!(view(rr.λperm, 1:subdim), eigf.values, 1:subdim, rev=rr.largest)
+        rr.λ[1:sizeX] .= view(eigf.values, view(rr.λperm, 1:sizeX))
+        rr.V[1:subdim, 1:sizeX] .= view(eigf.vectors, :, view(rr.λperm, 1:sizeX))
+
         # Updates Ritz vectors X and updates AX and BX accordingly
         # And updates P, AP and BP
-        A_mul_B!(rr.tempXBlocks.block, rr.XBlocks.block, view(rr.V, 1:sizeX, 1:sizeX))
+        r_eigview = view(rr.V, sizeX+1:sizeX+bs, 1:sizeX)
+        p_eigview = view(rr.V, sizeX+bs+1:sizeX+2*bs, 1:sizeX)
 
-        A_mul_B!(rr.tempXBlocks.A_block, rr.XBlocks.A_block, view(rr.V, 1:sizeX, 1:sizeX))
+        r_blockview = view(rr.activeRBlocks.block, :, 1:bs)
+        p_blockview = view(rr.activePBlocks.block, :, 1:bs)
+        A_mul_B!(rr.PBlocks.block, r_blockview , r_eigview)
+        A_mul_B!(rr.tempXBlocks.block, p_blockview, p_eigview)
+        rr.PBlocks.block .= rr.PBlocks.block .+ rr.tempXBlocks.block
+
+        ra_blockview = view(rr.activeRBlocks.A_block, :, 1:bs)
+        pa_blockview = view(rr.activePBlocks.A_block, :, 1:bs)
+        A_mul_B!(rr.PBlocks.A_block, ra_blockview, r_eigview)
+        A_mul_B!(rr.tempXBlocks.A_block, pa_blockview, p_eigview)
+        rr.PBlocks.A_block .= rr.PBlocks.A_block .+ rr.tempXBlocks.A_block
 
         if Generalized
-            A_mul_B!(rr.tempXBlocks.B_block, rr.XBlocks.B_block, view(rr.V, 1:sizeX, 1:sizeX))
+            rb_blockview = view(rr.activeRBlocks.B_block, :, 1:bs)
+            pb_blockview = view(rr.activePBlocks.B_block, :, 1:bs)
+            A_mul_B!(rr.PBlocks.B_block, rb_blockview, r_eigview)
+            A_mul_B!(rr.tempXBlocks.B_block, pb_blockview, p_eigview)
+            rr.PBlocks.B_block .= rr.PBlocks.B_block .+ rr.tempXBlocks.B_block
         end
 
-        A_mul_B!(rr.PBlocks.block, view(rr.activeRBlocks.block, :, 1:rr.currentBlockSize[]), view(rr.V, sizeX+1:sizeX+rr.currentBlockSize[], 1:sizeX))
-
-        A_mul_B!(rr.PBlocks.A_block, view(rr.activeRBlocks.A_block, :, 1:rr.currentBlockSize[]), view(rr.V, sizeX+1:sizeX+rr.currentBlockSize[], 1:sizeX))
-
-        if Generalized
-            A_mul_B!(rr.PBlocks.B_block, view(rr.activeRBlocks.B_block, :, 1:rr.currentBlockSize[]), view(rr.V, sizeX+1:sizeX+rr.currentBlockSize[], 1:sizeX))
-        end
-
+        x_eigview = view(rr.V, 1:sizeX, 1:sizeX)
+        A_mul_B!(rr.tempXBlocks.block, rr.XBlocks.block, x_eigview)
         rr.XBlocks.block .= rr.tempXBlocks.block .+ rr.PBlocks.block
+        A_mul_B!(rr.tempXBlocks.A_block, rr.XBlocks.A_block, x_eigview)
         rr.XBlocks.A_block .= rr.tempXBlocks.A_block .+ rr.PBlocks.A_block
         if Generalized
+            A_mul_B!(rr.tempXBlocks.B_block, rr.XBlocks.B_block, x_eigview)
             rr.XBlocks.B_block .= rr.tempXBlocks.B_block .+ rr.PBlocks.B_block
-        end        
+        end
     end
 
     return
@@ -626,13 +637,13 @@ function dense_solver(A, B, X, largest)
 end
 
 """Locally Optimal Block Preconditioned Conjugate Gradient Method (LOBPCG)"""
-function lobpcg(A, X::AbstractMatrix, largest::Bool=true, ::Type{Val{residualhistory}} = Val{false}; preconditioner=nothing, constraint=nothing, maxiter::Integer=200, tol::Number=nothing) where {residualhistory}
+function lobpcg(A, X::AbstractMatrix, largest::Bool=true, ::Type{Val{residualhistory}} = Val{false}; preconditioner=nothing, constraint=nothing, maxiter::Integer=100, tol::Number=nothing) where {residualhistory}
     lobpcg(A, nothing, X, largest, Val{residualhistory}; tol=tol, maxiter=maxiter, preconditioner=preconditioner, constraint=constraint)
 end
 
 function lobpcg(A, B, X, largest=true, ::Type{Val{residualhistory}}=Val{false};
                 preconditioner=nothing, constraint=nothing, 
-                tol=nothing, maxiter=200) where {residualhistory} 
+                tol=nothing, maxiter=100) where {residualhistory} 
 
     T = eltype(X)
     M = preconditioner
@@ -652,8 +663,10 @@ function lobpcg(A, B, X, largest=true, ::Type{Val{residualhistory}}=Val{false};
         throw("X column dimension exceeds the row dimension")
     end
 
-    if all(x->x==0, X)
-        X .= rand.()
+    for j in 1:size(X,2)
+        if all(x -> x==0, view(X, :, j))
+            X[:,j] .= rand.()
+        end
     end
     rr = RayleighRitz(A, B, M, Y, X, largest)
     residualTolerance = (tol isa Void) ? sqrt(1e-15)*n : tol
@@ -663,11 +676,9 @@ function lobpcg(A, B, X, largest=true, ::Type{Val{residualhistory}}=Val{false};
         rr(residualTolerance)
         rr.currentBlockSize[] == 0 && break
     end
-
-    resize!(rr.λ, sizeX)
     if residualhistory
-        return rr.λ, rr.XBlocks.block, rr.residualNormsHistory
+        return rr.λ[1:sizeX], rr.XBlocks.block, rr.residualNormsHistory
     else
-        return rr.λ, rr.XBlocks.block
+        return rr.λ[1:sizeX], rr.XBlocks.block
     end
 end
