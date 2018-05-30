@@ -363,7 +363,7 @@ function block_grams_1x1!(rr)
 end
 function block_grams_2x2!(rr, bs)
     sizeX = size(rr.XBlocks.block, 2)
-    XAX!(rr.gramABlock, rr.XBlocks)
+    #XAX!(rr.gramABlock, rr.XBlocks)
     XAR!(rr.gramABlock, rr.XBlocks, rr.activeRBlocks, bs)
     RAR!(rr.gramABlock, rr.activeRBlocks, bs)
     XBR!(rr.gramBBlock, rr.XBlocks, rr.activeRBlocks, bs)        
@@ -375,7 +375,7 @@ end
 function block_grams_3x3!(rr, bs)
     # Find R'AR, P'AP, X'AR, X'AP and R'AP
     sizeX = size(rr.XBlocks.block, 2)
-    XAX!(rr.gramABlock, rr.XBlocks)
+    #XAX!(rr.gramABlock, rr.XBlocks)
     XAR!(rr.gramABlock, rr.XBlocks, rr.activeRBlocks, bs)
     XAP!(rr.gramABlock, rr.XBlocks, rr.activePBlocks, bs)
     RAR!(rr.gramABlock, rr.activeRBlocks, bs)
