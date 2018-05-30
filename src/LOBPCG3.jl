@@ -542,11 +542,45 @@ function dense_solver(A, B, X, largest)
     end
 end
 
-"""Locally Optimal Block Preconditioned Conjugate Gradient Method (LOBPCG)"""
 function lobpcg(A, X::AbstractMatrix, largest::Bool=true, ::Type{Val{residualhistory}} = Val{false}; preconditioner=nothing, constraint=nothing, maxiter::Integer=100, tol::Number=nothing) where {residualhistory}
     lobpcg(A, nothing, X, largest, Val{residualhistory}; tol=tol, maxiter=maxiter, preconditioner=preconditioner, constraint=constraint)
 end
 
+"""
+    The Locally Optimal Block Preconditioned Conjugate Gradient Method (LOBPCG)
+
+    function lobpcg(A, B, X, largest=true, ::Type{Val{residualhistory}}=Val{false};
+        preconditioner=nothing, constraint=nothing, 
+        tol=nothing, maxiter=100) where {residualhistory} 
+
+    Finds the k extremal eigenvalues and their corresponding eigenvectors satisfying `AX = λBX` returning `λ` and `X`, using `X` as an initial guess, where `k = size(X,2)`. The input `X` is overwritten with the solution.
+
+    `A` and `B` may be generic types but `Base.A_mul_B!(C, AorB, X)` and `AorB * X` must be defined for vectors and strided matrices `X` and `C`.
+
+    Example:
+
+    T = Float64;
+    n = 1000; # Problem dimension
+    k = 3; # Number of eigenvalues
+
+    A = 10*sprand(T, n, n, 10/n);
+    A = A' + A + 50I;
+    B = 10*sprand(T, n, n, 10/n);
+    B = B' + B + 500I;
+    X0 = zeros(T, n, 3);
+    tol = T(1e-6);
+    maxiter = 200;
+
+    # Smallest generalized eigenvalues
+    λ, X = lobpcg(A, B, X0, false, tol=tol, maxiter=maxiter);
+    # Smallest simple eigenvalues
+    λ, X = lobpcg(A, X0, false, tol=tol, maxiter=maxiter);
+    # Largest generalized eigenvalues
+    λ, X = lobpcg(A, B, X0, true, tol=tol, maxiter=maxiter);
+    # Largest simple eigenvalues
+    λ, X = lobpcg(A, X0, true, tol=tol, maxiter=maxiter);
+
+"""
 function lobpcg(A, B, X, largest=true, ::Type{Val{residualhistory}}=Val{false};
                 preconditioner=nothing, constraint=nothing, 
                 tol=nothing, maxiter=100) where {residualhistory} 
