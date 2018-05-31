@@ -226,6 +226,7 @@ function A_rdiv_B!(A, B::UpperTriangular)
 end
 
 function (ortho!::CholQR)(XBlocks::Blocks{Generalized}, sizeX = -1; update_AX=false, update_BX=false) where Generalized
+    useview = sizeX != -1
     if sizeX == -1
         sizeX = size(XBlocks.block, 2)
     end
@@ -233,12 +234,23 @@ function (ortho!::CholQR)(XBlocks::Blocks{Generalized}, sizeX = -1; update_AX=fa
     BX = XBlocks.B_block # Assumes it is premultiplied
     AX = XBlocks.A_block
     gram_view = view(ortho!.gramVBV, 1:sizeX, 1:sizeX)
-    At_mul_B!(gram_view, view(X, :, 1:sizeX), view(BX, :, 1:sizeX))
+    if useview
+        At_mul_B!(gram_view, view(X, :, 1:sizeX), view(BX, :, 1:sizeX))
+    else
+        At_mul_B!(gram_view, X, BX)
+    end
     cholf = cholfact!(Hermitian(gram_view))
     R = cholf.factors
-    A_rdiv_B!(X, UpperTriangular(R))
-    update_AX && A_rdiv_B!(AX, UpperTriangular(R))
-    Generalized && update_BX && A_rdiv_B!(BX, UpperTriangular(R))
+    if useview
+        A_rdiv_B!(view(X, :, 1:sizeX), UpperTriangular(R))
+        update_AX && A_rdiv_B!(view(AX, :, 1:sizeX), UpperTriangular(R))
+        Generalized && update_BX && A_rdiv_B!(view(BX, :, 1:sizeX), UpperTriangular(R))
+    else
+        A_rdiv_B!(X, UpperTriangular(R))
+        update_AX && A_rdiv_B!(AX, UpperTriangular(R))
+        Generalized && update_BX && A_rdiv_B!(BX, UpperTriangular(R))
+    end
+
     return 
 end
 
@@ -581,10 +593,11 @@ end
     λ, X = lobpcg(A, X0, true, tol=tol, maxiter=maxiter);
 
 """
-function lobpcg(A, B, X, largest=true, ::Type{Val{residualhistory}}=Val{false};
+function lobpcg(A, B, X0, largest=true, ::Type{Val{residualhistory}}=Val{false};
                 preconditioner=nothing, constraint=nothing, 
                 tol=nothing, maxiter=100) where {residualhistory} 
 
+    X = copy(X0)
     T = eltype(X)
     M = preconditioner
     Y = constraint
