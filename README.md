@@ -17,8 +17,6 @@ Gradient Method. SIAM Journal on Scientific Computing, 23(2):517-541, 2001." The
 
 julia> using LOBPCG
 
-julia> using BenchmarkTools
-
 julia> max_error_norm(A, B, x, lambda) = sqrt(maximum(sum((x)->(conj(x)*x), A*x-B*x*diagm(lambda), 1)))
 max_error_norm (generic function with 1 method)
 
@@ -53,6 +51,12 @@ julia> lambda, x = lobpcg(A, X0, false, tol=tol, maxiter=Inf);
 
 julia> max_error_norm(A, x, lambda)
 9.83179424893794e-5
+```
+## Benchmarks
+### Smallest generalized eigenvalues
+
+```julia
+julia> using BenchmarkTools
 
 julia> @benchmark lobpcg($A, $B, $X0, false, tol=$tol, maxiter=Inf)
 BenchmarkTools.Trial:
@@ -79,7 +83,11 @@ BenchmarkTools.Trial:
   --------------
   samples:          1
   evals/sample:     1
+```
 
+### Largest generalized eigenvalues
+
+```julia
 julia> @benchmark lobpcg($A, $B, $X0, true, tol=$tol, maxiter=Inf)
 BenchmarkTools.Trial:
   memory estimate:  71.58 MiB
@@ -105,7 +113,11 @@ BenchmarkTools.Trial:
   --------------
   samples:          1
   evals/sample:     1
+```
 
+### Smallest simple eigenvalues
+
+```julia
 julia> @benchmark lobpcg($A, $X0, false, tol=$tol, maxiter=Inf)
 BenchmarkTools.Trial:
   memory estimate:  44.38 MiB
