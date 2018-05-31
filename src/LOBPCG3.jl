@@ -108,9 +108,10 @@ function (precond!::RPreconditioner{Void})(X)
     nothing
 end
 function (precond!::RPreconditioner)(X)
-    A_mul_B!(precond!.buffer, precond!.M, X)
+    bs = size(X, 2)
+    A_ldiv_B!(view(precond!.buffer, :, 1:bs), precond!.M, X)
     # Just returning buffer would be cheaper but struct at call site must be mutable
-    X .= precond!.buffer
+    X .= view(precond!.buffer, :, 1:bs)
     nothing
 end
 
@@ -363,9 +364,9 @@ function update_active!(mask, bs::Int, blockPairs...)
 end
 
 function precond_constr!(block, bs, precond!, constr!)
-    precond!(view(block, 1:bs))
+    precond!(view(block, :, 1:bs))
     # Constrain the active residual vectors to be B-orthogonal to Y
-    constr!(view(block, 1:bs))
+    constr!(view(block, :, 1:bs))
     return 
 end
 function block_grams_1x1!(rr)
