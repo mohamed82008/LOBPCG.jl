@@ -407,11 +407,14 @@ end
 
 function sub_problem!(rr, sizeX, bs1, bs2)
     subdim = sizeX+bs1+bs2
-    gramAview = view(rr.gramA, 1:subdim, 1:subdim)
     if bs1 == 0
-        eigf = eigfact!(Hermitian(rr.gramABlock.XAX))
+        gramAview = view(rr.gramABlock.XAX, 1:subdim, 1:subdim)
+        # Source of type instability
+        eigf = eigfact!(Hermitian(gramAview))
     else
+        gramAview = view(rr.gramA, 1:subdim, 1:subdim)
         gramBview = view(rr.gramB, 1:subdim, 1:subdim)
+        # Source of type instability
         eigf = eigfact!(Hermitian(gramAview), Hermitian(gramBview))
     end
     # Selects extremal eigenvalues and corresponding vectors
@@ -554,7 +557,7 @@ function dense_solver(A, B, X, largest)
     end
 end
 
-function lobpcg(A, X::AbstractMatrix, largest::Bool=true, ::Type{Val{residualhistory}} = Val{false}; preconditioner=nothing, constraint=nothing, maxiter::Integer=100, tol::Number=nothing) where {residualhistory}
+function lobpcg(A, X::AbstractMatrix, largest::Bool=true, ::Type{Val{residualhistory}} = Val{false}; preconditioner=nothing, constraint=nothing, maxiter=100, tol::Number=nothing) where {residualhistory}
     lobpcg(A, nothing, X, largest, Val{residualhistory}; tol=tol, maxiter=maxiter, preconditioner=preconditioner, constraint=constraint)
 end
 
