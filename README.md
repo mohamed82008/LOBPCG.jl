@@ -9,112 +9,127 @@
 ## Introduction
 
 This package implements the algorithm for finding minimum or maximum generalized eigenvalues and vectors from "Andrew V. Knyazev. Toward the Optimal Preconditioned Eigensolver: Locally Optimal Block Preconditioned Conjugate
-Gradient Method. SIAM Journal on Scientific Computing, 23(2):517-541, 2001." The algorithm tries to maximize or minimize the Rayleigh quotient using an enhanced conjugate gradient method. This package is still in the proof of concept stage and only implements the single eigenvector version (i.e. no blocking).
+Gradient Method. SIAM Journal on Scientific Computing, 23(2):517-541, 2001." The algorithm tries to maximize or minimize the Rayleigh quotient using an enhanced conjugate gradient method.
 
 ## Example
 
 ```julia
+
 julia> using LOBPCG
 
 julia> using BenchmarkTools
 
-julia> T = Float64;
+julia> maxerr(A, B, X, lambda) = maximum(sum((x)->(conj(x)*x), A*X-B*X*diagm(lambda), 1))
+maxerr (generic function with 1 method)
 
-julia> n = 100000;
+julia> maxerr(A, X, lambda) = maximum(sum((x)->(conj(x)*x), A*X-X*diagm(lambda), 1))
+maxerr (generic function with 2 methods)
+
+julia> T = Float64
+Float64
+
+julia> n = 10000
+10000
 
 julia> A = 10*sprand(T, n, n, 10/n);
 
-julia> A = A' + A + 200I;
+julia> A = A' + A + 500I;
 
 julia> B = 10*sprand(T, n, n, 10/n);
 
-julia> B = B' + B + 200I;
-
-julia> a = zeros(T, n);
+julia> B = B' + B + 500I;
 
 julia> tol = T(1e-4)
 0.0001
 
-julia> lambda, x = locg(A, B, a, Val{:Max}, tol);
+julia> X0 = zeros(T, n, 2);
 
-julia> norm(A*x - lambda * B * x)
-9.947322586451714e-5
+julia> lambda, X = lobpcg(A, B, X0, false, tol=tol);
 
-julia> buffers = LOCGBuffersSimple(a);
+julia> maxerr(A, B, X, lambda)
+8.088281961209552e-8
 
-julia> @time lambda, x = locg(A, buffers, Val{:Min}, tol);
-  1.300320 seconds (171.74 k allocations: 6.836 MiB)
+julia> lambda, X = lobpcg(A, X0, false, tol=tol);
 
-julia> buffers = LOCGBuffersSimple(a);
+julia> maxerr(A, X, lambda)
+9.523001324147468e-5
 
-julia> @time lambda, x = locg(A, buffers, Val{:Min}, tol);
-  0.294669 seconds (9 allocations: 288 bytes)
-
-julia> norm(A * x - lambda * x)
-8.442852486067891e-5
-
-julia> _I = speye(n,n);
-
-julia> buffers = LOCGBuffersGeneral(a);
-
-julia> @time lambda, x = locg(_I, B, buffers, Val{:Max}, tol);
-  0.904644 seconds (163 allocations: 9.991 KiB)
-
-julia> buffers = LOCGBuffersGeneral(a);
-
-julia> @time lambda, x = locg(_I, B, buffers, Val{:Max}, tol);
-  0.558346 seconds (9 allocations: 288 bytes)
-
-julia> @benchmark locg($A, $a, Val{:Max}, $tol)
+julia> @benchmark lobpcg($A, $B, $X0, false, tol=$tol)
 BenchmarkTools.Trial:
-  memory estimate:  9.92 MiB
-  allocs estimate:  20
-  --------------
-  minimum time:     88.074 ms (0.00% GC)
-  median time:      91.625 ms (0.00% GC)
-  mean time:        91.905 ms (0.84% GC)
-  maximum time:     96.656 ms (1.90% GC)
-  --------------
-  samples:          55
-  evals/sample:     1
+memory estimate:  74.08 MiB
+allocs estimate:  18846
+--------------
+minimum time:     290.257 ms (1.52% GC)
+median time:      301.370 ms (2.26% GC)
+mean time:        308.458 ms (3.29% GC)
+maximum time:     380.284 ms (19.79% GC)
+--------------
+samples:          17
+evals/sample:     1
 
-julia> @benchmark eigs($A, nev=1, which=:LM, tol=$tol)
+julia> @benchmark eigs($A, $B, nev=2, which=:SM, tol=$tol)
 BenchmarkTools.Trial:
-  memory estimate:  19.85 MiB
-  allocs estimate:  250
-  --------------
-  minimum time:     222.059 ms (0.00% GC)
-  median time:      228.296 ms (1.11% GC)
-  mean time:        228.548 ms (1.09% GC)
-  maximum time:     234.640 ms (1.40% GC)
-  --------------
-  samples:          22
-  evals/sample:     1
+memory estimate:  727.35 MiB
+allocs estimate:  8563
+--------------
+minimum time:     8.065 s (0.87% GC)
+median time:      8.065 s (0.87% GC)
+mean time:        8.065 s (0.87% GC)
+maximum time:     8.065 s (0.87% GC)
+--------------
+samples:          1
+evals/sample:     1
 
-julia> @benchmark locg($A, $a, Val{:Min}, $tol)
+julia> @benchmark lobpcg($A, $B, $X0, true, tol=$tol)
 BenchmarkTools.Trial:
-  memory estimate:  9.92 MiB
-  allocs estimate:  20
-  --------------
-  minimum time:     278.934 ms (0.82% GC)
-  median time:      295.056 ms (0.00% GC)
-  mean time:        593.186 ms (0.15% GC)
-  maximum time:     1.886 s (0.10% GC)
-  --------------
-  samples:          9
-  evals/sample:     1
+memory estimate:  65.67 MiB
+allocs estimate:  18571
+--------------
+minimum time:     262.807 ms (2.26% GC)
+median time:      292.508 ms (1.90% GC)
+mean time:        294.680 ms (3.16% GC)
+maximum time:     372.151 ms (20.32% GC)
+--------------
+samples:          17
+evals/sample:     1
 
-julia> @benchmark eigs($A, nev=1, which=:SR, tol=$tol)
+julia> @benchmark eigs($A, $B, nev=2, which=:LM, tol=$tol)
 BenchmarkTools.Trial:
-  memory estimate:  19.86 MiB
-  allocs estimate:  740
-  --------------
-  minimum time:     1.002 s (0.26% GC)
-  median time:      1.014 s (0.26% GC)
-  mean time:        1.152 s (0.17% GC)
-  maximum time:     1.608 s (0.28% GC)
-  --------------
-  samples:          5
-  evals/sample:     1
+memory estimate:  681.42 MiB
+allocs estimate:  4487
+--------------
+minimum time:     6.875 s (0.98% GC)
+median time:      6.875 s (0.98% GC)
+mean time:        6.875 s (0.98% GC)
+maximum time:     6.875 s (0.98% GC)
+--------------
+samples:          1
+evals/sample:     1
+
+julia> @benchmark lobpcg($A, $X0, false, tol=$tol)
+BenchmarkTools.Trial:
+memory estimate:  45.01 MiB
+allocs estimate:  17122
+--------------
+minimum time:     163.061 ms (0.91% GC)
+median time:      167.357 ms (1.13% GC)
+mean time:        168.513 ms (1.34% GC)
+maximum time:     181.494 ms (2.32% GC)
+--------------
+samples:          30
+evals/sample:     1
+
+julia> @benchmark eigs($A, nev=2, which=:SM, tol=$tol)
+BenchmarkTools.Trial:
+memory estimate:  671.82 MiB
+allocs estimate:  2213
+--------------
+minimum time:     5.793 s (1.06% GC)
+median time:      5.793 s (1.06% GC)
+mean time:        5.793 s (1.06% GC)
+maximum time:     5.793 s (1.06% GC)
+--------------
+samples:          1
+evals/sample:     1
 
 ```
